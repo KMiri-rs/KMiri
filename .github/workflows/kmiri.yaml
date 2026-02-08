@@ -1,0 +1,30 @@
+name: KMiri
+
+on:
+  push:
+
+jobs:
+  run-kmiri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install toolchain
+        run: rustc -V
+
+      - name: Check default miri
+        run: |
+          rustup component add miri
+          ls -alh $(rustc --print=sysroot)/bin/*miri
+          cargo miri --version
+
+      - name: Checkout kmiri
+        run: git submodule update --init kmiri
+
+      - name: Install kmiri
+        working-directory: kmiri
+        run: |
+          ./miri install
+          ls -alh $(rustc --print=sysroot)/bin/*miri
+          cargo miri --version
+
