@@ -13,3 +13,6 @@
 [submodule "kmiri"]
 	path = kmiri
 	url = https://github.com/KMiri-rs/miri.git
+[submodule "asterinas"]
+	path = asterinas
+	url = https://github.com/KMiri-rs/asterinas.git
