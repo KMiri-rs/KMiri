@@ -4,7 +4,7 @@ on:
   push:
 
 jobs:
-  run-kmiri:
+  KMiri:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -28,3 +28,25 @@ jobs:
           ls -alh $(rustc --print=sysroot)/bin/*miri
           cargo miri --version
 
+  Asterinas:
+    runs-on: ubuntu-latest
+    container:
+      # Environment required by Asterinas.
+      image: asterinas/asterinas:0.17.0-20260114
+      options: --device=/dev/kvm --privileged
+      volumes:
+        # Map the following directories on the host into the container so that
+        # the container can remove them to save some precious disk space (~16GB),
+        # which is quite limited on free-tier Github runners.
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check out asterinas
+        run: git submodule update --init asterinas
+
+      - name: make check
+        working-directory: asterinas
+        run: RUSTFLAGS=--cfg=miri make test
