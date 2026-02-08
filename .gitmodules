@@ -7,3 +7,6 @@
 [submodule "old/miri-cchanging"]
 	path = old/miri-cchanging
 	url = https://github.com/KMiri-rs/kern_miri-asterinas-cchanging.git
+[submodule "old/miri-billlosw"]
+	path = old/miri-billlosw
+	url = https://github.com/KMiri-rs/kern_miri-os-course.git
