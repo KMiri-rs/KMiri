@@ -1,3 +1,6 @@
 [submodule "old/atc25-asterinas"]
 	path = old/atc25-asterinas
 	url = https://github.com/KMiri-rs/asterinas-atc25-artifact-evaluation.git
+[submodule "old/atc25-kern_miri"]
+	path = old/atc25-kern_miri
+	url = https://github.com/KMiri-rs/asterinas-atc25-artifact-evaluation.git
