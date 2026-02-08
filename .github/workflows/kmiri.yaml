@@ -45,8 +45,11 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Check out asterinas
-        run: git submodule update --init asterinas
+        run: git submodule update --init asterinas env/linux_vdso
 
       - name: make check
         working-directory: asterinas
-        run: RUSTFLAGS=--cfg=miri make test
+        env:
+          VDSO_LIBRARY_DIR: $GITHUB_WORKSPACE/env/linux_vdso
+          RUSTFLAGS: --cfg=miri
+        run: echo $VDSO_LIBRARY_DIR && make test
