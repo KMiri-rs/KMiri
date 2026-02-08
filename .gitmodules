@@ -1,0 +1,12 @@
+[submodule "old/atc25-asterinas"]
+	path = old/atc25-asterinas
+	url = https://github.com/KMiri-rs/asterinas-atc25-artifact-evaluation.git
+[submodule "old/atc25-kern_miri"]
+	path = old/atc25-kern_miri
+	url = https://github.com/KMiri-rs/asterinas-atc25-artifact-evaluation.git
+[submodule "old/miri-cchanging"]
+	path = old/miri-cchanging
+	url = https://github.com/KMiri-rs/kern_miri-asterinas-cchanging.git
+[submodule "old/miri-billlosw"]
+	path = old/miri-billlosw
+	url = https://github.com/KMiri-rs/kern_miri-os-course.git
