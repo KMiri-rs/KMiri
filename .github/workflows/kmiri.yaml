@@ -44,6 +44,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Fix git ownership
+        run: |
+          git config --global --add safe.directory /__w/KMiri/KMiri
+          git config --global --add safe.directory '*'
+
       - name: Check out asterinas
         run: git submodule update --init asterinas env/linux_vdso
 
