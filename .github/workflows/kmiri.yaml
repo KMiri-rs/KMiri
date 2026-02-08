@@ -1,0 +1,60 @@
+name: KMiri
+
+on:
+  push:
+
+jobs:
+  KMiri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install toolchain
+        run: rustc -V
+
+      - name: Check default miri
+        run: |
+          rustup component add miri
+          ls -alh $(rustc --print=sysroot)/bin/*miri
+          cargo miri --version
+
+      - name: Checkout kmiri
+        run: git submodule update --init kmiri
+
+      - name: Install kmiri
+        working-directory: kmiri
+        run: |
+          ./miri install
+          ls -alh $(rustc --print=sysroot)/bin/*miri
+          cargo miri --version
+
+  Asterinas:
+    runs-on: ubuntu-latest
+    container:
+      # Environment required by Asterinas.
+      image: asterinas/asterinas:0.17.0-20260114
+      options: --device=/dev/kvm --privileged
+      volumes:
+        # Map the following directories on the host into the container so that
+        # the container can remove them to save some precious disk space (~16GB),
+        # which is quite limited on free-tier Github runners.
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fix git ownership
+        run: |
+          git config --global --add safe.directory /__w/KMiri/KMiri
+          git config --global --add safe.directory '*'
+
+      - name: Check out asterinas
+        run: git submodule update --init asterinas env/linux_vdso
+
+      - name: make check
+        working-directory: asterinas
+        env:
+          VDSO_LIBRARY_DIR: $GITHUB_WORKSPACE/env/linux_vdso
+          RUSTFLAGS: --cfg=miri
+        run: echo $VDSO_LIBRARY_DIR && make test

@@ -10,3 +10,12 @@
 [submodule "old/miri-billlosw"]
 	path = old/miri-billlosw
 	url = https://github.com/KMiri-rs/kern_miri-os-course.git
+[submodule "kmiri"]
+	path = kmiri
+	url = https://github.com/KMiri-rs/miri.git
+[submodule "asterinas"]
+	path = asterinas
+	url = https://github.com/KMiri-rs/asterinas.git
+[submodule "env/linux_vdso"]
+	path = env/linux_vdso
+	url = https://github.com/asterinas/linux_vdso.git
