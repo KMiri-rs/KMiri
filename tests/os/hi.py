@@ -1,12 +1,14 @@
+from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict
 from pprint import pp
+import textwrap
 import gdb
 
 @dataclass
 class ProcessStatus:
     exited: bool
-    filename: str
+    cmdline: CmdLine
     parent: int | None = None
 
 class Hi(gdb.Command):
@@ -21,19 +23,26 @@ class Hi(gdb.Command):
         # gdb.events.new_progspace.connect(self.new_progspace_handler)
         # gdb.events.new_objfile.connect(self.new_objfile_handler)
 
-    def invoke(self, args, from_tty):
+    def invoke(self, arg, from_tty):
         printInferior("invoke")
 
-        gdb.execute("catch exec")
-        gdb.execute("run")
+        if not arg:
+            gdb.execute("catch exec")
+            gdb.execute("run")
+            return
+
+        if arg == "disconnect":
+            gdb.events.stop.disconnect(self.stop_handler)
+            gdb.events.exited.disconnect(self.exit_handler)
+            gdb.events.new_inferior.disconnect(self.new_inferior_handler)
 
     def stop_handler(self, event):
         printInferior("stop_handler")
-        fname = filename(gdb.selected_inferior())
-        if not is_miri(fname):
-            gdb.execute("continue")
-        else:
-            print(f"😎 Reached miri: {fname}")
+        cmdline = CmdLine.new(gdb.selected_inferior().pid)
+        if cmdline.is_miri_interested("os_osdk_bin"):
+            print(f"😎 Reached miri: {pp(cmdline)}")
+            return 
+        gdb.execute("continue")
 
     def exit_handler(self, event):
         printInferior("exit_handler")
@@ -69,8 +78,7 @@ class Hi(gdb.Command):
             if item:
                 item.exited = exited
             else:
-                self.child_to_parent[num] = ProcessStatus(exited, filename=filename(inf))
-                # print(f"{parent} => {child} is outdated and removed for child {num}")
+                self.child_to_parent[num] = ProcessStatus(exited, cmdline=CmdLine.new(inf.pid))
 
         remove = []
         for num in self.child_to_parent:
@@ -101,10 +109,10 @@ class Hi(gdb.Command):
         for num, status in self.child_to_parent.items():
             if status.exited:
                 continue
-            if is_cargo_miri(status.filename):
+            if status.cmdline.is_cargo_miri():
                 cargo_miri.append(num)
                 continue
-            if is_miri(status.filename):
+            if status.cmdline.is_miri():
                 miri.append(num)
         print(f"miri={miri}\tcargo-miri={cargo_miri}")
         if miri:
@@ -117,7 +125,9 @@ class Hi(gdb.Command):
         parent = gdb.selected_inferior()
         child = event.inferior
         print(f"[New Inferior] {parent.num} => {child.num}")
-        self.child_to_parent[child.num] = ProcessStatus(exited=False, parent=parent.num, filename=filename(parent))
+        self.child_to_parent[child.num] = ProcessStatus(
+            exited=False, parent=parent.num, cmdline=CmdLine.new(parent.pid)
+        )
 
     def new_progspace_handler(self, event):
         printInferior(f"new_progspace_handler")
@@ -136,14 +146,53 @@ def printInferior(s):
     pid = inf.pid
     print(f"[inferior={num} pid={pid}] [{s}] {filename(inf)}")
 
-
-def is_miri(fname: str) -> bool:
-    return fname.endswith("miri")
-
-def is_cargo_miri(fname: str) -> bool:
-    return fname.endswith("cargo-miri")
-
 # cat /proc/2850975/cmdline | xargs -0
 # `/home/gh-zjp-CN/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/cargo-miri runner /home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-unknown-linux-gnu/debug/os-osdk-bin`
+@dataclass
+class CmdLine:
+    cmdline: str
+    exe: str
+
+    @classmethod
+    def new(cls, pid: int) -> CmdLine | None:
+        if pid == 0:
+            print("Process not started")
+            return None
+        
+        cmdline = ""
+        # 直接读系统文件，不需要 GDB 暂停程序
+        try:
+            with open(f"/proc/{pid}/cmdline", "r") as f:
+                # 替换 null 字符为空格
+                cmdline = f.read().replace('\x00', ' ')
+        except Exception as e:
+            print(e)
+            return None
+
+        return cls(cmdline, exe=cmdline.split(" ")[0].strip())
+
+    def is_miri_interested(self, crate: str) -> bool:
+        # /home/gh-zjp-CN/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/miri --sysroot /home/gh-zjp-CN/.cache/miri --crate-name os_
+        # osdk_bin --edition=2024 src/main.rs --diagnostic-width=160 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --check-cf
+        # g cfg(docsrs,test) --check-cfg cfg(feature, values()) -C metadata=1763759f804e0bb2 -C extra-filename=-abbb8042da03efe8 --out-dir /home/gh-zjp-
+        # CN/KMiri/tests/os/target/miri/x86_64-unknown-linux-gnu/debug/deps --target x86_64-unknown-linux-gnu -C incremental=/home/gh-zjp-CN/KMiri/tests
+        # /os/target/miri/x86_64-unknown-linux-gnu/debug/incremental -L dependency=/home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-unknown-linux-gnu/d
+        # ebug/deps -L dependency=/home/gh-zjp-CN/KMiri/tests/os/target/miri/debug/deps --extern noprelude:alloc=/home/gh-zjp-CN/KMiri/tests/os/target/m
+        # iri/x86_64-unknown-linux-gnu/debug/deps/liballoc-f7053cd07531c1b0.rlib --extern noprelude:compiler_builtins=/home/gh-zjp-CN/KMiri/tests/os/tar
+        # get/miri/x86_64-unknown-linux-gnu/debug/deps/libcompiler_builtins-ba64b2db9d19c20b.rlib --extern noprelude:core=/home/gh-zjp-CN/KMiri/tests/os
+        # /target/miri/x86_64-unknown-linux-gnu/debug/deps/libcore-7e921fa91c0ac277.rlib --extern os=/home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-u
+        # nknown-linux-gnu/debug/deps/libos-fc0464f9eb396199.rlib --extern osdk_frame_allocator=/home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-unknow
+        # n-linux-gnu/debug/deps/libosdk_frame_allocator-b6e49ebd5aa7114f.rlib --extern osdk_heap_allocator=/home/gh-zjp-CN/KMiri/tests/os/target/miri/x
+        # 86_64-unknown-linux-gnu/debug/deps/libosdk_heap_allocator-b57cfd8c86913aa3.rlib --extern osdk_test_kernel=/home/gh-zjp-CN/KMiri/tests/os/targe
+        # t/miri/x86_64-unknown-linux-gnu/debug/deps/libosdk_test_kernel-37678a83309cf538.rlib --extern ostd=/home/gh-zjp-CN/KMiri/tests/os/target/miri/
+        # x86_64-unknown-linux-gnu/debug/deps/libostd-314795e0586344e8.rlib -Z unstable-options --cfg ktest -C link-arg=-Tmiri.ld -C relocation-model=st
+        # atic -C relro-level=off -C force-unwind-tables=yes --check-cfg cfg(ktest) -C no-redzone=y -C target-feature=+ermsb --
+        return self.is_miri() and crate in self.cmdline
+
+    def is_miri(self) -> bool:
+        return self.exe.endswith("/miri")
+
+    def is_cargo_miri(self) -> bool:
+        return self.exe.endswith("/cargo-miri")
 
 Hi()
