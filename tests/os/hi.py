@@ -14,7 +14,6 @@ class Hi(gdb.Command):
         super().__init__("hi", gdb.COMMAND_USER)
         # inferior number as the key and parent
         self.child_to_parent: Dict[int, ProcessStatus] = {}
-        self.target_exe_file_suffix = "miri"
 
         gdb.events.stop.connect(self.stop_handler)
         gdb.events.exited.connect(self.exit_handler)
@@ -30,8 +29,11 @@ class Hi(gdb.Command):
 
     def stop_handler(self, event):
         printInferior("stop_handler")
-        if not gdb.selected_inferior().progspace.filename.endswith(self.target_exe_file_suffix):
+        fname = filename(gdb.selected_inferior())
+        if not is_miri(fname):
             gdb.execute("continue")
+        else:
+            print(f"😎 Reached miri: {fname}")
 
     def exit_handler(self, event):
         printInferior("exit_handler")
@@ -43,7 +45,13 @@ class Hi(gdb.Command):
         self.update_inferiors()
 
         child = gdb.selected_inferior().num
-        target = val if (val := self.inferior_to_be_returned(child)) else self.newest_alive_inferior()
+        target = None
+        if (val := self.inferior_to_be_returned(child)):
+            target = val 
+        elif (val := self.miri_inferior()):
+            target = val
+        else:
+            target = self.newest_alive_inferior()
         if not target:
             print(f"[No target inferior to jump back for child {child}]")
             return
@@ -86,6 +94,24 @@ class Hi(gdb.Command):
             if not status.exited: alive.append(num)
         return max(alive) if alive else None
 
+    def miri_inferior(self) -> int | None:
+        """Return the living miri or cargo-miri inferior number"""
+        miri = []
+        cargo_miri = []
+        for num, status in self.child_to_parent.items():
+            if status.exited:
+                continue
+            if is_cargo_miri(status.filename):
+                cargo_miri.append(num)
+                continue
+            if is_miri(status.filename):
+                miri.append(num)
+        print(f"miri={miri}\tcargo-miri={cargo_miri}")
+        if miri:
+            return max(miri)
+        else:
+            return num if cargo_miri and (num := max(cargo_miri)) else None
+
     def new_inferior_handler(self, event):
         printInferior(f"new_inferior_handler")
         parent = gdb.selected_inferior()
@@ -102,12 +128,22 @@ class Hi(gdb.Command):
         print(f"[new_objfile] objfile={event.new_objfile.filename}")
 
 def filename(inf) -> str:
-    return inf.progspace.filename
+    return fname if (fname := inf.progspace.filename) else "Unknown"
 
 def printInferior(s):
     inf = gdb.selected_inferior()
     num = inf.num
     pid = inf.pid
     print(f"[inferior={num} pid={pid}] [{s}] {filename(inf)}")
+
+
+def is_miri(fname: str) -> bool:
+    return fname.endswith("miri")
+
+def is_cargo_miri(fname: str) -> bool:
+    return fname.endswith("cargo-miri")
+
+# cat /proc/2850975/cmdline | xargs -0
+# `/home/gh-zjp-CN/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/cargo-miri runner /home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-unknown-linux-gnu/debug/os-osdk-bin`
 
 Hi()
