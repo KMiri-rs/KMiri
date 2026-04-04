@@ -19,7 +19,9 @@ class Hi(gdb.Command):
 
         gdb.events.stop.connect(self.stop_handler)
         gdb.events.exited.connect(self.exit_handler)
-        gdb.events.new_inferior.connect(self.new_inferior_handler)
+        # gdb.events.new_inferior.connect(self.new_inferior_handler)
+        gdb.events.selected_context.connect(self.on_selected_context)
+        # gdb.events.before_prompt.connect(self.on_before_prompt)
         # gdb.events.new_progspace.connect(self.new_progspace_handler)
         # gdb.events.new_objfile.connect(self.new_objfile_handler)
 
@@ -34,20 +36,38 @@ class Hi(gdb.Command):
         if arg == "disconnect":
             gdb.events.stop.disconnect(self.stop_handler)
             gdb.events.exited.disconnect(self.exit_handler)
-            gdb.events.new_inferior.disconnect(self.new_inferior_handler)
+            # gdb.events.new_inferior.disconnect(self.new_inferior_handler)
+            gdb.events.selected_context.disconnect(self.on_selected_context)
 
-    def stop_handler(self, event):
-        printInferior("stop_handler")
+    def run_continue(self):
         cmdline = CmdLine.new(gdb.selected_inferior().pid)
         if cmdline.is_miri_interested("os_osdk_bin"):
             print(f"😎 Reached miri: {pp(cmdline)}")
             return 
-        gdb.execute("continue")
+        try:
+            gdb.execute("continue")
+        except gdb.error as e:
+            print(f"[continue error] {e}")
+
+    def stop_handler(self, event):
+        printInferior("stop_handler")
+        # self.run_continue()
+        gdb.post_event(lambda: self.run_continue())
+        # cmdline = CmdLine.new(gdb.selected_inferior().pid)
+        # if cmdline.is_miri_interested("os_osdk_bin"):
+        #     print(f"😎 Reached miri: {pp(cmdline)}")
+        #     return 
+        # gdb.execute("continue")
+
+    def on_before_prompt(self):
+        printInferior("on_before_prompt")
+        self.run_continue()
 
     def exit_handler(self, event):
         printInferior("exit_handler")
         # Cleanup: Remove the exited inferior slot to prevent GDB memory bloat/crash
-        # gdb.post_event(lambda: gdb.execute(f"remove-inferiors {child}; inferior {parent}"))
+        # current = event.inferior.num
+        # gdb.execute(f"remove-inferiors {current}")
         gdb.post_event(lambda: self.exit_to_another_inferior())
 
     def exit_to_another_inferior(self):
@@ -64,9 +84,13 @@ class Hi(gdb.Command):
         if not target:
             print(f"[No target inferior to jump back for child {child}]")
             return
-
-        print(f"back to {target}\n{pp(self.child_to_parent, sort_dicts=True)}")
+        
+        cmdline = self.child_to_parent[target].cmdline
+        print(f"back to {target}")
+        # pp(self.child_to_parent, sort_dicts=True)
         gdb.execute(f"inferior {target}")
+        # if not cmdline.is_miri():
+        # gdb.post_event(lambda: gdb.execute("continue"))
 
     def update_inferiors(self):
         present = set()
@@ -128,6 +152,7 @@ class Hi(gdb.Command):
         self.child_to_parent[child.num] = ProcessStatus(
             exited=False, parent=parent.num, cmdline=CmdLine.new(parent.pid)
         )
+        gdb.post_event(lambda: self.run_continue())
 
     def new_progspace_handler(self, event):
         printInferior(f"new_progspace_handler")
@@ -136,6 +161,10 @@ class Hi(gdb.Command):
     def new_objfile_handler(self, event):
         printInferior(f"new_objfile_handler")
         print(f"[new_objfile] objfile={event.new_objfile.filename}")
+
+    def on_selected_context(self, event):
+        print(f"[on_selected_context] current inferior: {event.inferior.num}, thread: {event.thread.num} frame: {event.frame.name}")
+        self.run_continue()
 
 def filename(inf) -> str:
     return fname if (fname := inf.progspace.filename) else "Unknown"
