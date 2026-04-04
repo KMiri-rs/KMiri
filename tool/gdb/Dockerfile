@@ -31,7 +31,8 @@ RUN git clone --depth 1 https://sourceware.org/git/binutils-gdb.git . \
 
 WORKDIR /
 # Install Rust and dev tools.
-RUN apt update && apt install -y fish less vim curl \
+RUN apt update && apt install -y fish less vim curl wget \
+    && wget -P ~ https://github.com/cyrus-and/gdb-dashboard/raw/master/.gdbinit \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain none -y \
     && . "$HOME/.cargo/env" \
     && rustup default nightly-2025-12-06 \
