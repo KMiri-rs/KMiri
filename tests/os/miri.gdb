@@ -14,6 +14,6 @@ handle SIGUSR1 noprint nostop pass
 handle SIGCHLD nostop noprint pass
 
 # Register the `hi` command.
-source hi.py
-hi
+source miri.py
+miri
 

@@ -1,115 +1,206 @@
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Dict
+from pprint import pp
+import textwrap
 import gdb
 
-class MiriCommand(gdb.Command):
-    """
-    Automates GDB to reach the 'miri' process.
-    Optimized to prevent GDB segmentation faults in multi-process environments.
-    """
+@dataclass
+class ProcessStatus:
+    exited: bool
+    cmdline: CmdLine
+    parent: int | None = None
 
+CMD = "miri"
+ARG_RUN = "run"
+ARG_DISCONNECT = "disconnect"
+ARG_SET_BREAKPOINTS = "set-breakpoints"
+
+class Miri(gdb.Command):
     def __init__(self):
-        super(MiriCommand, self).__init__("miri", gdb.COMMAND_USER)
-        self.target_name = "miri"
-        self.hooked = False
+        # The command name is `miri`.
+        super().__init__(CMD, gdb.COMMAND_USER)
+        # inferior number as the key and parent
+        self.child_to_parent: Dict[int, ProcessStatus] = {}
 
-    def is_target(self, filename):
-        return filename and self.target_name in filename.lower()
-
-    def stop_handler(self, event):
-        """Handle stop events (triggered by catch exec)"""
-        if not self.hooked:
-            return
-
-        inf = gdb.selected_inferior()
-        filename = inf.progspace.filename
-
-        if self.is_target(filename):
-            print(f"\n[OK] Found Miri: {filename}")
-            self.cleanup()
-        else:
-            # Not miri, keep going.
-            # We use post_event to let GDB finish its current event cycle.
-            print(f"[Search] Skipping: {filename}")
-            gdb.post_event(self.safe_continue)
-
-    def exit_handler(self, event):
-        """Handle process exit and return to parent"""
-        if not self.hooked:
-            return
-
-        exited_inf = event.inferior
-        print(f"[Info] Process {exited_inf.num} exited.")
-
-        # Return to Inferior 1 (the main cargo/osdk process)
-        parent_inf = None
-        for inf in gdb.inferiors():
-            print(f"[Debug] {inf.num}")
-            if inf.num == 1 and inf.is_valid():
-                parent_inf = inf
-                break
-
-        if parent_inf and parent_inf.pid != 0:
-            # Switch to the parent and continue searching
-            try:
-                # Select the first available thread in the parent
-                threads = list(parent_inf.threads())
-                if threads:
-                    threads[0].switch()
-                    print(f"[>] Back to parent (Inferior {parent_inf.num}).")
-                    gdb.post_event(self.safe_continue)
-            except gdb.error:
-                pass
-
-        # Cleanup: Remove the exited inferior slot to prevent GDB memory bloat/crash
-        gdb.post_event(lambda: gdb.execute(f"remove-inferiors {exited_inf.num}", to_string=True))
-
-    def safe_continue(self):
-        """Executes continue only if the session is still active"""
-        try:
-            if self.hooked:
-                gdb.execute("continue")
-        except gdb.error:
-            pass
-
-    def cleanup(self):
-        """Disconnect all hooks"""
-        if self.hooked:
-            gdb.events.stop.disconnect(self.stop_handler)
-            gdb.events.exited.disconnect(self.exit_handler)
-            self.hooked = False
-            # Optional: gdb.execute("delete checkpoints")
-            print("[*] Miri capture hooks uninstalled.")
-
-    def invoke(self, arg, from_tty):
-        inf = gdb.selected_inferior()
-        if not inf.progspace or not inf.progspace.filename:
-            print("[Error] Load a file first.")
-            return
-
-        if self.hooked:
-            print("Already running.")
-            return
-
-        # 1. Stability settings
-        # gdb.execute("set confirmation off")
-        gdb.execute("set follow-fork-mode child")
-        gdb.execute("set detach-on-fork off")
-        # Disable printing inferior exit/start messages to reduce internal stress
-        gdb.execute("set print inferior-events off")
-        gdb.execute("set print thread-events off")
-
-        # 2. Setup catchpoint
-        gdb.execute("catch exec")
-
-        # 3. Hook events
+        # Register event callbacks.
         gdb.events.stop.connect(self.stop_handler)
         gdb.events.exited.connect(self.exit_handler)
-        self.hooked = True
+        gdb.events.selected_context.connect(self.on_selected_context)
 
-        print(f"[*] Searching for '{self.target_name}' recursively...")
+    def invoke(self, arg, from_tty):
+        # printInferior("invoke")
 
-        if inf.pid == 0:
+        # The entry point.
+        if not arg:
+            gdb.execute("catch exec")
             gdb.execute("run")
-        else:
-            gdb.execute("continue")
+            return
 
-MiriCommand()
+        # Unregister event callbacks.
+        if arg == ARG_DISCONNECT:
+            gdb.events.stop.disconnect(self.stop_handler)
+            gdb.events.exited.disconnect(self.exit_handler)
+            gdb.events.selected_context.disconnect(self.on_selected_context)
+            return
+        
+        if arg == ARG_SET_BREAKPOINTS:
+            gdb.execute("break miri::main")
+            gdb.execute("break miri::eval::create_ecx")
+            return
+
+        if arg == ARG_RUN:
+            gdb.execute(f"{CMD} {ARG_DISCONNECT}")
+            gdb.execute(f"{CMD} {ARG_SET_BREAKPOINTS}")
+
+    def complete(self, text, word):
+        word = word or ""
+        candidates = [ARG_RUN, ARG_DISCONNECT, ARG_SET_BREAKPOINTS]
+        return [c for c in candidates if c.startswith(word)]
+
+    def run_continue(self):
+        cmdline = CmdLine.new(gdb.selected_inferior().pid)
+        if cmdline.is_miri_interested("os_osdk_bin"):
+            print(f"😎 Reached miri: {pp(cmdline)}")
+            return 
+        try:
+            gdb.execute("continue")
+        except gdb.error as e:
+            print(f"[continue error] {e}")
+
+    def stop_handler(self, event):
+        printInferior("stop_handler")
+        # Execute `continue` in the stop event callback doesn't work.
+        # We need to run `continue` in post_event.
+        gdb.post_event(lambda: self.run_continue())
+
+    def exit_handler(self, event):
+        printInferior("exit_handler")
+        # We don't need to remove-inferiors, because follow-exec-mode defaults 
+        # to same, meaning dead process will be overridden or cleaned up during exec by GDB.
+        # But we do need to return to a parent or proper process.
+        gdb.post_event(lambda: self.exit_to_another_inferior())
+
+    def exit_to_another_inferior(self):
+        self.update_inferiors()
+
+        child = gdb.selected_inferior().num
+        target = None
+        if (val := self.inferior_to_be_returned(child)):
+            target = val 
+        elif (val := self.miri_inferior()):
+            target = val
+        else:
+            target = self.newest_alive_inferior()
+        if not target:
+            print(f"[No target inferior to jump back for child {child}]")
+            return
+        
+        cmdline = self.child_to_parent[target].cmdline
+        print(f"back to {target}")
+        # pp(self.child_to_parent, sort_dicts=True)
+        gdb.execute(f"inferior {target}")
+
+    def update_inferiors(self):
+        present = set()
+        for inf in gdb.inferiors():
+            num = inf.num
+            present.add(num)
+            item = self.child_to_parent.get(num)
+            exited = not inf.is_valid() or inf.pid == 0
+            if item:
+                item.exited = exited
+            else:
+                self.child_to_parent[num] = ProcessStatus(exited, cmdline=CmdLine.new(inf.pid))
+
+        remove = []
+        for num in self.child_to_parent:
+            if num not in present: remove.append(num)
+        for num in remove:
+            del self.child_to_parent[num]
+
+    def inferior_to_be_returned(self, num: int) -> int | None:
+        child = self.child_to_parent.get(num)
+        if child is None: return None
+
+        parentNum = child.parent
+        parent = self.child_to_parent.get(parentNum)
+        if parent is None: return None
+        return self.inferior_to_be_returned(parentNum) if parent.exited else parentNum
+
+    def newest_alive_inferior(self) -> int | None:
+        """Choose the largest alive inferior."""
+        alive = []
+        for num, status in self.child_to_parent.items():
+            if not status.exited: alive.append(num)
+        return max(alive) if alive else None
+
+    def miri_inferior(self) -> int | None:
+        """Return the living miri or cargo-miri inferior number"""
+        miri = []
+        cargo_miri = []
+        for num, status in self.child_to_parent.items():
+            if status.exited:
+                continue
+            if status.cmdline.is_cargo_miri():
+                cargo_miri.append(num)
+                continue
+            if status.cmdline.is_miri():
+                miri.append(num)
+        print(f"miri={miri}\tcargo-miri={cargo_miri}")
+        if miri:
+            return max(miri)
+        else:
+            return num if cargo_miri and (num := max(cargo_miri)) else None
+
+    def on_selected_context(self, event):
+        print(f"[on_selected_context] current inferior: {event.inferior.num}, thread: {event.thread.num} frame: {event.frame.name}")
+        self.run_continue()
+
+def filename(inf) -> str:
+    return fname if (fname := inf.progspace.filename) else "Unknown"
+
+def printInferior(s):
+    inf = gdb.selected_inferior()
+    num = inf.num
+    pid = inf.pid
+    print(f"[inferior={num} pid={pid}] [{s}] {filename(inf)}")
+
+# cat /proc/2850975/cmdline | xargs -0
+# `/home/gh-zjp-CN/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/cargo-miri runner /home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-unknown-linux-gnu/debug/os-osdk-bin`
+@dataclass
+class CmdLine:
+    cmdline: str
+    exe: str
+
+    @classmethod
+    def new(cls, pid: int) -> CmdLine | None:
+        if pid == 0:
+            print("Process not started")
+            return None
+        
+        cmdline = ""
+        # 直接读系统文件，不需要 GDB 暂停程序
+        try:
+            with open(f"/proc/{pid}/cmdline", "r") as f:
+                # 替换 null 字符为空格
+                cmdline = f.read().replace('\x00', ' ')
+        except Exception as e:
+            print(e)
+            return None
+
+        return cls(cmdline, exe=cmdline.split(" ")[0].strip())
+
+    def is_miri_interested(self, crate: str) -> bool:
+        # /home/gh-zjp-CN/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/miri --sysroot /home/gh-zjp-CN/.cache/miri
+        # --crate-name os_osdk_bin ...
+        return self.is_miri() and crate in self.cmdline
+
+    def is_miri(self) -> bool:
+        return self.exe.endswith("/miri")
+
+    def is_cargo_miri(self) -> bool:
+        return self.exe.endswith("/cargo-miri")
+
+# Register the command.
+Miri()
