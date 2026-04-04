@@ -17,13 +17,10 @@ class Hi(gdb.Command):
         # inferior number as the key and parent
         self.child_to_parent: Dict[int, ProcessStatus] = {}
 
+        # Register event callbacks.
         gdb.events.stop.connect(self.stop_handler)
         gdb.events.exited.connect(self.exit_handler)
-        # gdb.events.new_inferior.connect(self.new_inferior_handler)
         gdb.events.selected_context.connect(self.on_selected_context)
-        # gdb.events.before_prompt.connect(self.on_before_prompt)
-        # gdb.events.new_progspace.connect(self.new_progspace_handler)
-        # gdb.events.new_objfile.connect(self.new_objfile_handler)
 
     def invoke(self, arg, from_tty):
         printInferior("invoke")
@@ -33,11 +30,21 @@ class Hi(gdb.Command):
             gdb.execute("run")
             return
 
+        # Unregister event callbacks.
         if arg == "disconnect":
             gdb.events.stop.disconnect(self.stop_handler)
             gdb.events.exited.disconnect(self.exit_handler)
-            # gdb.events.new_inferior.disconnect(self.new_inferior_handler)
             gdb.events.selected_context.disconnect(self.on_selected_context)
+            return
+        
+        if arg == "set-breakpoints":
+            gdb.execute("break miri::main")
+            gdb.execute("break miri::eval::create_ecx")
+
+    def complete(self, text, word):
+        word = word or ""
+        candidates = ["disconnect", "set-breakpoints"]
+        return [c for c in candidates if c.startswith(word)]
 
     def run_continue(self):
         cmdline = CmdLine.new(gdb.selected_inferior().pid)
@@ -51,23 +58,15 @@ class Hi(gdb.Command):
 
     def stop_handler(self, event):
         printInferior("stop_handler")
-        # self.run_continue()
+        # Execute `continue` in the stop event callback doesn't work.
+        # We need to run `continue` in post_event.
         gdb.post_event(lambda: self.run_continue())
-        # cmdline = CmdLine.new(gdb.selected_inferior().pid)
-        # if cmdline.is_miri_interested("os_osdk_bin"):
-        #     print(f"😎 Reached miri: {pp(cmdline)}")
-        #     return 
-        # gdb.execute("continue")
-
-    def on_before_prompt(self):
-        printInferior("on_before_prompt")
-        self.run_continue()
 
     def exit_handler(self, event):
         printInferior("exit_handler")
-        # Cleanup: Remove the exited inferior slot to prevent GDB memory bloat/crash
-        # current = event.inferior.num
-        # gdb.execute(f"remove-inferiors {current}")
+        # We don't need to remove-inferiors, because follow-exec-mode defaults 
+        # to same, meaning dead process will be overridden or cleaned up during exec by GDB.
+        # But we do need to return to a parent or proper process.
         gdb.post_event(lambda: self.exit_to_another_inferior())
 
     def exit_to_another_inferior(self):
@@ -89,8 +88,6 @@ class Hi(gdb.Command):
         print(f"back to {target}")
         # pp(self.child_to_parent, sort_dicts=True)
         gdb.execute(f"inferior {target}")
-        # if not cmdline.is_miri():
-        # gdb.post_event(lambda: gdb.execute("continue"))
 
     def update_inferiors(self):
         present = set()
@@ -144,24 +141,6 @@ class Hi(gdb.Command):
         else:
             return num if cargo_miri and (num := max(cargo_miri)) else None
 
-    def new_inferior_handler(self, event):
-        printInferior(f"new_inferior_handler")
-        parent = gdb.selected_inferior()
-        child = event.inferior
-        print(f"[New Inferior] {parent.num} => {child.num}")
-        self.child_to_parent[child.num] = ProcessStatus(
-            exited=False, parent=parent.num, cmdline=CmdLine.new(parent.pid)
-        )
-        gdb.post_event(lambda: self.run_continue())
-
-    def new_progspace_handler(self, event):
-        printInferior(f"new_progspace_handler")
-        print(f"[new_progspace] progspace={event.progspace.filename}")
-
-    def new_objfile_handler(self, event):
-        printInferior(f"new_objfile_handler")
-        print(f"[new_objfile] objfile={event.new_objfile.filename}")
-
     def on_selected_context(self, event):
         print(f"[on_selected_context] current inferior: {event.inferior.num}, thread: {event.thread.num} frame: {event.frame.name}")
         self.run_continue()
@@ -201,21 +180,8 @@ class CmdLine:
         return cls(cmdline, exe=cmdline.split(" ")[0].strip())
 
     def is_miri_interested(self, crate: str) -> bool:
-        # /home/gh-zjp-CN/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/miri --sysroot /home/gh-zjp-CN/.cache/miri --crate-name os_
-        # osdk_bin --edition=2024 src/main.rs --diagnostic-width=160 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --check-cf
-        # g cfg(docsrs,test) --check-cfg cfg(feature, values()) -C metadata=1763759f804e0bb2 -C extra-filename=-abbb8042da03efe8 --out-dir /home/gh-zjp-
-        # CN/KMiri/tests/os/target/miri/x86_64-unknown-linux-gnu/debug/deps --target x86_64-unknown-linux-gnu -C incremental=/home/gh-zjp-CN/KMiri/tests
-        # /os/target/miri/x86_64-unknown-linux-gnu/debug/incremental -L dependency=/home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-unknown-linux-gnu/d
-        # ebug/deps -L dependency=/home/gh-zjp-CN/KMiri/tests/os/target/miri/debug/deps --extern noprelude:alloc=/home/gh-zjp-CN/KMiri/tests/os/target/m
-        # iri/x86_64-unknown-linux-gnu/debug/deps/liballoc-f7053cd07531c1b0.rlib --extern noprelude:compiler_builtins=/home/gh-zjp-CN/KMiri/tests/os/tar
-        # get/miri/x86_64-unknown-linux-gnu/debug/deps/libcompiler_builtins-ba64b2db9d19c20b.rlib --extern noprelude:core=/home/gh-zjp-CN/KMiri/tests/os
-        # /target/miri/x86_64-unknown-linux-gnu/debug/deps/libcore-7e921fa91c0ac277.rlib --extern os=/home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-u
-        # nknown-linux-gnu/debug/deps/libos-fc0464f9eb396199.rlib --extern osdk_frame_allocator=/home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-unknow
-        # n-linux-gnu/debug/deps/libosdk_frame_allocator-b6e49ebd5aa7114f.rlib --extern osdk_heap_allocator=/home/gh-zjp-CN/KMiri/tests/os/target/miri/x
-        # 86_64-unknown-linux-gnu/debug/deps/libosdk_heap_allocator-b57cfd8c86913aa3.rlib --extern osdk_test_kernel=/home/gh-zjp-CN/KMiri/tests/os/targe
-        # t/miri/x86_64-unknown-linux-gnu/debug/deps/libosdk_test_kernel-37678a83309cf538.rlib --extern ostd=/home/gh-zjp-CN/KMiri/tests/os/target/miri/
-        # x86_64-unknown-linux-gnu/debug/deps/libostd-314795e0586344e8.rlib -Z unstable-options --cfg ktest -C link-arg=-Tmiri.ld -C relocation-model=st
-        # atic -C relro-level=off -C force-unwind-tables=yes --check-cfg cfg(ktest) -C no-redzone=y -C target-feature=+ermsb --
+        # /home/gh-zjp-CN/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/miri --sysroot /home/gh-zjp-CN/.cache/miri
+        # --crate-name os_osdk_bin ...
         return self.is_miri() and crate in self.cmdline
 
     def is_miri(self) -> bool:
