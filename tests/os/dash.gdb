@@ -1,10 +1,10 @@
 # dashboard styling
 dash -layout assembly source stack variables
 dash source -style highlight-line True
-dash source -style height 15
+dash source -style height 20
 dash source -style path True
-dash stack -style limit 5
-dash assembly -style height 7
+dash stack -style limit 3
+dash assembly -style height 5
 dash assembly -style function False
 dash assembly -style opcodes True
 dash assembly -style highlight-line True
