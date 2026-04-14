@@ -1,0 +1,3224 @@
+Dump of assembler code for function rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>:
+⚠️ warning: (Internal error: pc 0x5dc340355d48 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355d48 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355d08 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355d08 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355ca8 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355ca8 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355c50 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355c50 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355d28 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355d28 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355cc8 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355cc8 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355ce8 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355ce8 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355c70 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355c70 in address map, but not in symtab.)
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+363	    pub fn deallocate_ptr(
+   0x00005dc34007c220 <+0>:	55                 	push   rbp
+   0x00005dc34007c221 <+1>:	41 57              	push   r15
+   0x00005dc34007c223 <+3>:	41 56              	push   r14
+   0x00005dc34007c225 <+5>:	41 55              	push   r13
+   0x00005dc34007c227 <+7>:	41 54              	push   r12
+   0x00005dc34007c229 <+9>:	53                 	push   rbx
+   0x00005dc34007c22a <+10>:	48 81 ec 28 04 00 00	sub    rsp,0x428
+   0x00005dc34007c231 <+17>:	41 89 cf           	mov    r15d,ecx
+   0x00005dc34007c234 <+20>:	44 88 7c 24 1e     	mov    BYTE PTR [rsp+0x1e],r15b
+
+364	        &mut self,
+365	        ptr: Pointer<Option<M::Provenance>>,
+366	        old_size_and_align: Option<(Size, Align)>,
+367	        kind: MemoryKind<M::MemoryKind>,
+368	    ) -> InterpResult<'tcx> {
+369	        let (alloc_id, offset, prov) = self.ptr_get_alloc_id(ptr, 0)?;
+   0x00005dc34007c239 <+25>:	48 8b 5e 18        	mov    rbx,QWORD PTR [rsi+0x18]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_middle/src/mir/interpret/pointer.rs:
+291	        match self.provenance {
+   0x00005dc34007c23d <+29>:	f6 06 01           	test   BYTE PTR [rsi],0x1
+   0x00005dc34007c240 <+32>:	0f 84 39 01 00 00  	je     0x5dc34007c37f <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+351>
+   0x00005dc34007c246 <+38>:	49 89 fe           	mov    r14,rdi
+   0x00005dc34007c249 <+41>:	48 89 54 24 20     	mov    QWORD PTR [rsp+0x20],rdx
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+369	        let (alloc_id, offset, prov) = self.ptr_get_alloc_id(ptr, 0)?;
+   0x00005dc34007c24e <+46>:	4c 8b 66 08        	mov    r12,QWORD PTR [rsi+0x8]
+   0x00005dc34007c252 <+50>:	48 89 f5           	mov    rbp,rsi
+   0x00005dc34007c255 <+53>:	4c 8b 6e 10        	mov    r13,QWORD PTR [rsi+0x10]
+
+461	
+462	    /// Internal helper function to determine the allocation and offset of a pointer (if any).
+463	    #[inline(always)]
+464	    fn get_ptr_access(
+465	        &self,
+466	        ptr: Pointer<Option<M::Provenance>>,
+467	        size: Size,
+468	    ) -> InterpResult<'tcx, Option<(AllocId, Size, M::ProvenanceExtra)>> {
+469	        let size = i64::try_from(size.bytes()).unwrap(); // it would be an error to even ask for more than isize::MAX bytes
+470	        Self::check_and_deref_ptr(
+471	            self,
+472	            ptr,
+473	            size,
+474	            CheckInAllocMsg::MemoryAccess,
+475	            |this, alloc_id, offset, prov| {
+476	                let (size, align) =
+477	                    this.get_live_alloc_size_and_align(alloc_id, CheckInAllocMsg::MemoryAccess)?;
+478	                interp_ok((size, align, (alloc_id, offset, prov)))
+479	            },
+480	        )
+481	    }
+482	
+483	    /// Check if the given pointer points to live memory of the given `size`.
+484	    /// The caller can control the error message for the out-of-bounds case.
+485	    #[inline(always)]
+486	    pub fn check_ptr_access(
+487	        &self,
+488	        ptr: Pointer<Option<M::Provenance>>,
+489	        size: Size,
+490	        msg: CheckInAllocMsg,
+491	    ) -> InterpResult<'tcx> {
+492	        let size = i64::try_from(size.bytes()).unwrap(); // it would be an error to even ask for more than isize::MAX bytes
+493	        Self::check_and_deref_ptr(self, ptr, size, msg, |this, alloc_id, _, _| {
+494	            let (size, align) = this.get_live_alloc_size_and_align(alloc_id, msg)?;
+495	            interp_ok((size, align, ()))
+496	        })?;
+497	        interp_ok(())
+498	    }
+499	
+500	    /// Check whether the given pointer points to live memory for a signed amount of bytes.
+501	    /// A negative amounts means that the given range of memory to the left of the pointer
+502	    /// needs to be dereferenceable.
+503	    pub fn check_ptr_access_signed(
+504	        &self,
+505	        ptr: Pointer<Option<M::Provenance>>,
+506	        size: i64,
+507	        msg: CheckInAllocMsg,
+508	    ) -> InterpResult<'tcx> {
+509	        Self::check_and_deref_ptr(self, ptr, size, msg, |this, alloc_id, _, _| {
+510	            let (size, align) = this.get_live_alloc_size_and_align(alloc_id, msg)?;
+511	            interp_ok((size, align, ()))
+512	        })?;
+513	        interp_ok(())
+514	    }
+515	
+516	    /// Low-level helper function to check if a ptr is in-bounds and potentially return a reference
+517	    /// to the allocation it points to. Supports both shared and mutable references, as the actual
+518	    /// checking is offloaded to a helper closure. Supports signed sizes for checks "to the left" of
+519	    /// a pointer.
+520	    ///
+521	    /// `alloc_size` will only get called for non-zero-sized accesses.
+522	    ///
+523	    /// Returns `None` if and only if the size is 0.
+524	    fn check_and_deref_ptr<T, R: Borrow<Self>>(
+525	        this: R,
+526	        ptr: Pointer<Option<M::Provenance>>,
+527	        size: i64,
+528	        msg: CheckInAllocMsg,
+529	        alloc_size: impl FnOnce(
+530	            R,
+531	            AllocId,
+532	            Size,
+533	            M::ProvenanceExtra,
+534	        ) -> InterpResult<'tcx, (Size, Align, T)>,
+535	    ) -> InterpResult<'tcx, Option<T>> {
+536	        // Everything is okay with size 0.
+537	        if size == 0 {
+538	            return interp_ok(None);
+539	        }
+540	
+541	        interp_ok(match this.borrow().ptr_try_get_alloc_id(ptr, size) {
+542	            Err(addr) => {
+543	                // We couldn't get a proper allocation.
+544	                throw_ub!(DanglingIntPointer { addr, inbounds_size: size, msg });
+545	            }
+546	            Ok((alloc_id, offset, prov)) => {
+547	                let tcx = this.borrow().tcx;
+548	                let (alloc_size, _alloc_align, ret_val) = alloc_size(this, alloc_id, offset, prov)?;
+549	                let offset = offset.bytes();
+550	                // Compute absolute begin and end of the range.
+551	                let (begin, end) = if size >= 0 {
+552	                    (Some(offset), offset.checked_add(size as u64))
+553	                } else {
+554	                    (offset.checked_sub(size.unsigned_abs()), Some(offset))
+555	                };
+556	                // Ensure both are within bounds.
+557	                let in_bounds = begin.is_some() && end.is_some_and(|e| e <= alloc_size.bytes());
+558	                if !in_bounds {
+559	                    throw_ub!(PointerOutOfBounds {
+560	                        alloc_id,
+561	                        alloc_size,
+562	                        ptr_offset: tcx.sign_extend_to_target_isize(offset),
+563	                        inbounds_size: size,
+564	                        msg,
+565	                    })
+566	                }
+567	
+568	                Some(ret_val)
+569	            }
+570	        })
+571	    }
+572	
+573	    pub(super) fn check_misalign(
+574	        &self,
+575	        misaligned: Option<Misalignment>,
+576	        msg: CheckAlignMsg,
+577	    ) -> InterpResult<'tcx> {
+578	        if let Some(misaligned) = misaligned {
+579	            throw_ub!(AlignmentCheckFailed(misaligned, msg))
+580	        }
+581	        interp_ok(())
+582	    }
+583	
+584	    pub(super) fn is_ptr_misaligned(
+585	        &self,
+586	        ptr: Pointer<Option<M::Provenance>>,
+587	        align: Align,
+588	    ) -> Option<Misalignment> {
+589	        if !M::enforce_alignment(self) || align.bytes() == 1 {
+590	            return None;
+591	        }
+592	
+593	        #[inline]
+594	        fn is_offset_misaligned(offset: u64, align: Align) -> Option<Misalignment> {
+595	            if offset.is_multiple_of(align.bytes()) {
+596	                None
+597	            } else {
+598	                // The biggest power of two through which `offset` is divisible.
+599	                let offset_pow2 = 1 << offset.trailing_zeros();
+600	                Some(Misalignment { has: Align::from_bytes(offset_pow2).unwrap(), required: align })
+601	            }
+602	        }
+603	
+604	        match self.ptr_try_get_alloc_id(ptr, 0) {
+605	            Err(addr) => is_offset_misaligned(addr, align),
+606	            Ok((alloc_id, offset, _prov)) => {
+607	                let alloc_info = self.get_alloc_info(alloc_id);
+608	                if let Some(misalign) = M::alignment_check(
+609	                    self,
+610	                    alloc_id,
+611	                    alloc_info.align,
+612	                    alloc_info.kind,
+613	                    offset,
+614	                    align,
+615	                ) {
+616	                    Some(misalign)
+617	                } else if M::Provenance::OFFSET_IS_ADDR {
+618	                    is_offset_misaligned(ptr.addr().bytes(), align)
+619	                } else {
+620	                    // Check allocation alignment and offset alignment.
+621	                    if alloc_info.align.bytes() < align.bytes() {
+622	                        Some(Misalignment { has: alloc_info.align, required: align })
+623	                    } else {
+624	                        is_offset_misaligned(offset.bytes(), align)
+625	                    }
+626	                }
+627	            }
+628	        }
+629	    }
+630	
+631	    /// Checks a pointer for misalignment.
+632	    ///
+633	    /// The error assumes this is checking the pointer used directly for an access.
+634	    pub fn check_ptr_align(
+635	        &self,
+636	        ptr: Pointer<Option<M::Provenance>>,
+637	        align: Align,
+638	    ) -> InterpResult<'tcx> {
+639	        self.check_misalign(self.is_ptr_misaligned(ptr, align), CheckAlignMsg::AccessedPtr)
+640	    }
+641	}
+642	
+643	impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
+644	    /// This function is used by Miri's provenance GC to remove unreachable entries from the dead_alloc_map.
+645	    pub fn remove_unreachable_allocs(&mut self, reachable_allocs: &FxHashSet<AllocId>) {
+646	        // Unlike all the other GC helpers where we check if an `AllocId` is found in the interpreter or
+647	        // is live, here all the IDs in the map are for dead allocations so we don't
+648	        // need to check for liveness.
+649	        #[allow(rustc::potential_query_instability)] // Only used from Miri, not queries.
+650	        self.memory.dead_alloc_map.retain(|id, _| reachable_allocs.contains(id));
+651	    }
+652	}
+653	
+654	/// Allocation accessors
+655	impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
+656	    /// Helper function to obtain a global (tcx) allocation.
+657	    /// This attempts to return a reference to an existing allocation if
+658	    /// one can be found in `tcx`. That, however, is only possible if `tcx` and
+659	    /// this machine use the same pointer provenance, so it is indirected through
+660	    /// `M::adjust_allocation`.
+661	    fn get_global_alloc(
+662	        &self,
+663	        id: AllocId,
+664	        is_write: bool,
+665	    ) -> InterpResult<'tcx, Cow<'tcx, Allocation<M::Provenance, M::AllocExtra, M::Bytes>>> {
+666	        let (alloc, def_id) = match self.tcx.try_get_global_alloc(id) {
+667	            Some(GlobalAlloc::Memory(mem)) => {
+668	                // Memory of a constant or promoted or anonymous memory referenced by a static.
+669	                (mem, None)
+670	            }
+671	            Some(GlobalAlloc::Function { .. }) => throw_ub!(DerefFunctionPointer(id)),
+672	            Some(GlobalAlloc::VTable(..)) => throw_ub!(DerefVTablePointer(id)),
+673	            Some(GlobalAlloc::TypeId { .. }) => throw_ub!(DerefTypeIdPointer(id)),
+674	            None => throw_ub!(PointerUseAfterFree(id, CheckInAllocMsg::MemoryAccess)),
+675	            Some(GlobalAlloc::Static(def_id)) => {
+676	                assert!(self.tcx.is_static(def_id));
+677	                // Thread-local statics do not have a constant address. They *must* be accessed via
+678	                // `ThreadLocalRef`; we can never have a pointer to them as a regular constant value.
+679	                assert!(!self.tcx.is_thread_local_static(def_id));
+680	                // Notice that every static has two `AllocId` that will resolve to the same
+681	                // thing here: one maps to `GlobalAlloc::Static`, this is the "lazy" ID,
+682	                // and the other one is maps to `GlobalAlloc::Memory`, this is returned by
+683	                // `eval_static_initializer` and it is the "resolved" ID.
+684	                // The resolved ID is never used by the interpreted program, it is hidden.
+685	                // This is relied upon for soundness of const-patterns; a pointer to the resolved
+686	                // ID would "sidestep" the checks that make sure consts do not point to statics!
+687	                // The `GlobalAlloc::Memory` branch here is still reachable though; when a static
+688	                // contains a reference to memory that was created during its evaluation (i.e., not
+689	                // to another static), those inner references only exist in "resolved" form.
+690	                if self.tcx.is_foreign_item(def_id) {
+691	                    // This is unreachable in Miri, but can happen in CTFE where we actually *do* support
+692	                    // referencing arbitrary (declared) extern statics.
+693	                    throw_unsup!(ExternStatic(def_id));
+694	                }
+695	
+696	                // We don't give a span -- statics don't need that, they cannot be generic or associated.
+697	                let val = self.ctfe_query(|tcx| tcx.eval_static_initializer(def_id))?;
+698	                (val, Some(def_id))
+699	            }
+700	        };
+701	        M::before_access_global(self.tcx, &self.machine, id, alloc, def_id, is_write)?;
+702	        // We got tcx memory. Let the machine initialize its "extra" stuff.
+703	        M::adjust_global_allocation(
+704	            self,
+705	            id, // always use the ID we got as input, not the "hidden" one.
+706	            alloc.inner(),
+707	        )
+708	    }
+709	
+710	    /// Gives raw access to the `Allocation`, without bounds or alignment checks.
+711	    /// The caller is responsible for calling the access hooks!
+712	    ///
+713	    /// You almost certainly want to use `get_ptr_alloc`/`get_ptr_alloc_mut` instead.
+714	    pub fn get_alloc_raw(
+715	        &self,
+716	        id: AllocId,
+717	    ) -> InterpResult<'tcx, &Allocation<M::Provenance, M::AllocExtra, M::Bytes>> {
+718	        // The error type of the inner closure here is somewhat funny. We have two
+719	        // ways of "erroring": An actual error, or because we got a reference from
+720	        // `get_global_alloc` that we can actually use directly without inserting anything anywhere.
+721	        // So the error type is `InterpResult<'tcx, &Allocation<M::Provenance>>`.
+722	        let a = self.memory.alloc_map.get_or(id, || {
+723	            // We have to funnel the `InterpErrorInfo` through a `Result` to match the `get_or` API,
+724	            // so we use `report_err` for that.
+725	            let alloc = self.get_global_alloc(id, /*is_write*/ false).report_err().map_err(Err)?;
+726	            match alloc {
+727	                Cow::Borrowed(alloc) => {
+728	                    // We got a ref, cheaply return that as an "error" so that the
+729	                    // map does not get mutated.
+730	                    Err(Ok(alloc))
+731	                }
+732	                Cow::Owned(alloc) => {
+733	                    // Need to put it into the map and return a ref to that
+734	                    let kind = M::GLOBAL_KIND.expect(
+735	                        "I got a global allocation that I have to copy but the machine does \
+736	                            not expect that to happen",
+737	                    );
+738	                    Ok((MemoryKind::Machine(kind), alloc))
+739	                }
+740	            }
+741	        });
+742	        // Now unpack that funny error type
+743	        match a {
+744	            Ok(a) => interp_ok(&a.1),
+745	            Err(a) => a.into(),
+746	        }
+747	    }
+748	
+749	    /// Gives raw, immutable access to the `Allocation` address, without bounds or alignment checks.
+750	    /// The caller is responsible for calling the access hooks!
+751	    pub fn get_alloc_bytes_unchecked_raw(&self, id: AllocId) -> InterpResult<'tcx, *const u8> {
+752	        let alloc = self.get_alloc_raw(id)?;
+753	        interp_ok(alloc.get_bytes_unchecked_raw())
+754	    }
+755	
+756	    /// Bounds-checked *but not align-checked* allocation access.
+757	    pub fn get_ptr_alloc<'a>(
+758	        &'a self,
+759	        ptr: Pointer<Option<M::Provenance>>,
+760	        size: Size,
+761	    ) -> InterpResult<'tcx, Option<AllocRef<'a, 'tcx, M::Provenance, M::AllocExtra, M::Bytes>>>
+762	    {
+763	        let size_i64 = i64::try_from(size.bytes()).unwrap(); // it would be an error to even ask for more than isize::MAX bytes
+764	        let ptr_and_alloc = Self::check_and_deref_ptr(
+765	            self,
+766	            ptr,
+767	            size_i64,
+768	            CheckInAllocMsg::MemoryAccess,
+769	            |this, alloc_id, offset, prov| {
+770	                let alloc = this.get_alloc_raw(alloc_id)?;
+771	                interp_ok((alloc.size(), alloc.align, (alloc_id, offset, prov, alloc)))
+772	            },
+773	        )?;
+774	        // We want to call the hook on *all* accesses that involve an AllocId, including zero-sized
+775	        // accesses. That means we cannot rely on the closure above or the `Some` branch below. We
+776	        // do this after `check_and_deref_ptr` to ensure some basic sanity has already been checked.
+777	        if !self.memory.validation_in_progress.get() {
+778	            if let Ok((alloc_id, ..)) = self.ptr_try_get_alloc_id(ptr, size_i64) {
+779	                M::before_alloc_access(self.tcx, &self.machine, alloc_id)?;
+780	            }
+781	        }
+782	
+783	        if let Some((alloc_id, offset, prov, alloc)) = ptr_and_alloc {
+784	            let range = alloc_range(offset, size);
+785	            if !self.memory.validation_in_progress.get() {
+786	                M::before_memory_read(
+787	                    self.tcx,
+788	                    &self.machine,
+789	                    &alloc.extra,
+790	                    ptr,
+791	                    (alloc_id, prov),
+792	                    range,
+793	                )?;
+794	            }
+795	            interp_ok(Some(AllocRef { alloc, range, tcx: *self.tcx, alloc_id }))
+796	        } else {
+797	            interp_ok(None)
+798	        }
+799	    }
+800	
+801	    /// Return the `extra` field of the given allocation.
+802	    pub fn get_alloc_extra<'a>(&'a self, id: AllocId) -> InterpResult<'tcx, &'a M::AllocExtra> {
+803	        interp_ok(&self.get_alloc_raw(id)?.extra)
+804	    }
+805	
+806	    /// Return the `mutability` field of the given allocation.
+807	    pub fn get_alloc_mutability<'a>(&'a self, id: AllocId) -> InterpResult<'tcx, Mutability> {
+808	        interp_ok(self.get_alloc_raw(id)?.mutability)
+809	    }
+810	
+811	    /// Gives raw mutable access to the `Allocation`, without bounds or alignment checks.
+812	    /// The caller is responsible for calling the access hooks!
+813	    ///
+814	    /// Also returns a ptr to `self.extra` so that the caller can use it in parallel with the
+815	    /// allocation.
+816	    ///
+817	    /// You almost certainly want to use `get_ptr_alloc`/`get_ptr_alloc_mut` instead.
+818	    pub fn get_alloc_raw_mut(
+819	        &mut self,
+820	        id: AllocId,
+821	    ) -> InterpResult<'tcx, (&mut Allocation<M::Provenance, M::AllocExtra, M::Bytes>, &mut M)> {
+822	        // We have "NLL problem case #3" here, which cannot be worked around without loss of
+823	        // efficiency even for the common case where the key is in the map.
+824	        // <https://rust-lang.github.io/rfcs/2094-nll.html#problem-case-3-conditional-control-flow-across-functions>
+825	        // (Cannot use `get_mut_or` since `get_global_alloc` needs `&self`, and that boils down to
+826	        // Miri's `adjust_alloc_root_pointer` needing to look up the size of the allocation.
+827	        // It could be avoided with a totally separate codepath in Miri for handling the absolute address
+828	        // of global allocations, but that's not worth it.)
+829	        if self.memory.alloc_map.get_mut(id).is_none() {
+830	            // Slow path.
+831	            // Allocation not found locally, go look global.
+832	            let alloc = self.get_global_alloc(id, /*is_write*/ true)?;
+833	            let kind = M::GLOBAL_KIND.expect(
+834	                "I got a global allocation that I have to copy but the machine does \
+835	                    not expect that to happen",
+836	            );
+837	            self.memory.alloc_map.insert(id, (MemoryKind::Machine(kind), alloc.into_owned()));
+838	        }
+839	
+840	        let (_kind, alloc) = self.memory.alloc_map.get_mut(id).unwrap();
+841	        if alloc.mutability.is_not() {
+842	            throw_ub!(WriteToReadOnly(id))
+843	        }
+844	        interp_ok((alloc, &mut self.machine))
+845	    }
+846	
+847	    /// Gives raw, mutable access to the `Allocation` address, without bounds or alignment checks.
+848	    /// The caller is responsible for calling the access hooks!
+849	    pub fn get_alloc_bytes_unchecked_raw_mut(
+850	        &mut self,
+851	        id: AllocId,
+852	    ) -> InterpResult<'tcx, *mut u8> {
+853	        let alloc = self.get_alloc_raw_mut(id)?.0;
+854	        interp_ok(alloc.get_bytes_unchecked_raw_mut())
+855	    }
+856	
+857	    /// Bounds-checked *but not align-checked* allocation access.
+858	    pub fn get_ptr_alloc_mut<'a>(
+859	        &'a mut self,
+860	        ptr: Pointer<Option<M::Provenance>>,
+861	        size: Size,
+862	    ) -> InterpResult<'tcx, Option<AllocRefMut<'a, 'tcx, M::Provenance, M::AllocExtra, M::Bytes>>>
+863	    {
+864	        let tcx = self.tcx;
+865	        let validation_in_progress = self.memory.validation_in_progress.get();
+866	
+867	        let size_i64 = i64::try_from(size.bytes()).unwrap(); // it would be an error to even ask for more than isize::MAX bytes
+868	        let ptr_and_alloc = Self::check_and_deref_ptr(
+869	            self,
+870	            ptr,
+871	            size_i64,
+872	            CheckInAllocMsg::MemoryAccess,
+873	            |this, alloc_id, offset, prov| {
+874	                let (alloc, machine) = this.get_alloc_raw_mut(alloc_id)?;
+875	                interp_ok((alloc.size(), alloc.align, (alloc_id, offset, prov, alloc, machine)))
+876	            },
+877	        )?;
+878	
+879	        if let Some((alloc_id, offset, prov, alloc, machine)) = ptr_and_alloc {
+880	            let range = alloc_range(offset, size);
+881	            if !validation_in_progress {
+882	                // For writes, it's okay to only call those when there actually is a non-zero
+883	                // amount of bytes to be written: a zero-sized write doesn't manifest anything.
+884	                M::before_alloc_access(tcx, machine, alloc_id)?;
+885	                M::before_memory_write(
+886	                    tcx,
+887	                    machine,
+888	                    &mut alloc.extra,
+889	                    ptr,
+890	                    (alloc_id, prov),
+891	                    range,
+892	                )?;
+893	            }
+894	            interp_ok(Some(AllocRefMut { alloc, range, tcx: *tcx, alloc_id }))
+895	        } else {
+896	            interp_ok(None)
+897	        }
+898	    }
+899	
+900	    /// Return the `extra` field of the given allocation.
+901	    pub fn get_alloc_extra_mut<'a>(
+902	        &'a mut self,
+903	        id: AllocId,
+904	    ) -> InterpResult<'tcx, (&'a mut M::AllocExtra, &'a mut M)> {
+905	        let (alloc, machine) = self.get_alloc_raw_mut(id)?;
+906	        interp_ok((&mut alloc.extra, machine))
+907	    }
+908	
+909	    /// Check whether an allocation is live. This is faster than calling
+910	    /// [`InterpCx::get_alloc_info`] if all you need to check is whether the kind is
+911	    /// [`AllocKind::Dead`] because it doesn't have to look up the type and layout of statics.
+912	    pub fn is_alloc_live(&self, id: AllocId) -> bool {
+913	        self.memory.alloc_map.contains_key_ref(&id)
+914	            || self.memory.extra_fn_ptr_map.contains_key(&id)
+915	            // We check `tcx` last as that has to acquire a lock in `many-seeds` mode.
+916	            // This also matches the order in `get_alloc_info`.
+917	            || self.tcx.try_get_global_alloc(id).is_some()
+918	    }
+919	
+920	    /// Obtain the size and alignment of an allocation, even if that allocation has
+921	    /// been deallocated.
+922	    pub fn get_alloc_info(&self, id: AllocId) -> AllocInfo {
+923	        // # Regular allocations
+924	        // Don't use `self.get_raw` here as that will
+925	        // a) cause cycles in case `id` refers to a static
+926	        // b) duplicate a global's allocation in miri
+927	        if let Some((_, alloc)) = self.memory.alloc_map.get(id) {
+928	            return AllocInfo::new(
+929	                alloc.size(),
+930	                alloc.align,
+931	                AllocKind::LiveData,
+932	                alloc.mutability,
+933	            );
+934	        }
+935	
+936	        // # Function pointers
+937	        // (both global from `alloc_map` and local from `extra_fn_ptr_map`)
+938	        if let Some(fn_val) = self.get_fn_alloc(id) {
+939	            let align = match fn_val {
+940	                FnVal::Instance(_instance) => {
+941	                    // FIXME: Until we have a clear design for the effects of align(N) functions
+942	                    // on the address of function pointers, we don't consider the align(N)
+943	                    // attribute on functions in the interpreter.
+944	                    // See <https://github.com/rust-lang/rust/issues/144661> for more context.
+945	                    Align::ONE
+946	                }
+947	                // Machine-specific extra functions currently do not support alignment restrictions.
+948	                FnVal::Other(_) => Align::ONE,
+949	            };
+950	
+951	            return AllocInfo::new(Size::ZERO, align, AllocKind::Function, Mutability::Not);
+952	        }
+953	
+954	        // # Global allocations
+955	        if let Some(global_alloc) = self.tcx.try_get_global_alloc(id) {
+956	            // NOTE: `static` alignment from attributes has already been applied to the allocation.
+957	            let (size, align) = global_alloc.size_and_align(*self.tcx, self.typing_env);
+958	            let mutbl = global_alloc.mutability(*self.tcx, self.typing_env);
+959	            let kind = match global_alloc {
+960	                GlobalAlloc::Static { .. } | GlobalAlloc::Memory { .. } => AllocKind::LiveData,
+961	                GlobalAlloc::Function { .. } => bug!("We already checked function pointers above"),
+962	                GlobalAlloc::VTable { .. } => AllocKind::VTable,
+963	                GlobalAlloc::TypeId { .. } => AllocKind::TypeId,
+964	            };
+965	            return AllocInfo::new(size, align, kind, mutbl);
+966	        }
+967	
+968	        // # Dead pointers
+969	        let (size, align) = *self
+970	            .memory
+971	            .dead_alloc_map
+972	            .get(&id)
+973	            .expect("deallocated pointers should all be recorded in `dead_alloc_map`");
+974	        AllocInfo::new(size, align, AllocKind::Dead, Mutability::Not)
+975	    }
+976	
+977	    /// Obtain the size and alignment of a *live* allocation.
+978	    fn get_live_alloc_size_and_align(
+979	        &self,
+980	        id: AllocId,
+981	        msg: CheckInAllocMsg,
+982	    ) -> InterpResult<'tcx, (Size, Align)> {
+983	        let info = self.get_alloc_info(id);
+984	        if matches!(info.kind, AllocKind::Dead) {
+985	            throw_ub!(PointerUseAfterFree(id, msg))
+986	        }
+987	        interp_ok((info.size, info.align))
+988	    }
+989	
+990	    fn get_fn_alloc(&self, id: AllocId) -> Option<FnVal<'tcx, M::ExtraFnVal>> {
+991	        if let Some(extra) = self.memory.extra_fn_ptr_map.get(&id) {
+992	            Some(FnVal::Other(*extra))
+993	        } else {
+994	            match self.tcx.try_get_global_alloc(id) {
+995	                Some(GlobalAlloc::Function { instance, .. }) => Some(FnVal::Instance(instance)),
+996	                _ => None,
+997	            }
+998	        }
+999	    }
+1000	
+1001	    /// Takes a pointer that is the first chunk of a `TypeId` and return the type that its
+1002	    /// provenance refers to, as well as the segment of the hash that this pointer covers.
+1003	    pub fn get_ptr_type_id(
+1004	        &self,
+1005	        ptr: Pointer<Option<M::Provenance>>,
+1006	    ) -> InterpResult<'tcx, (Ty<'tcx>, u64)> {
+1007	        let (alloc_id, offset, _meta) = self.ptr_get_alloc_id(ptr, 0)?;
+1008	        let Some(GlobalAlloc::TypeId { ty }) = self.tcx.try_get_global_alloc(alloc_id) else {
+1009	            throw_ub_format!("invalid `TypeId` value: not all bytes carry type id metadata")
+1010	        };
+1011	        interp_ok((ty, offset.bytes()))
+1012	    }
+1013	
+1014	    pub fn get_ptr_fn(
+1015	        &self,
+1016	        ptr: Pointer<Option<M::Provenance>>,
+1017	    ) -> InterpResult<'tcx, FnVal<'tcx, M::ExtraFnVal>> {
+1018	        trace!("get_ptr_fn({:?})", ptr);
+1019	        let (alloc_id, offset, _prov) = self.ptr_get_alloc_id(ptr, 0)?;
+1020	        if offset.bytes() != 0 {
+1021	            throw_ub!(InvalidFunctionPointer(Pointer::new(alloc_id, offset)))
+1022	        }
+1023	        self.get_fn_alloc(alloc_id)
+1024	            .ok_or_else(|| err_ub!(InvalidFunctionPointer(Pointer::new(alloc_id, offset))))
+1025	            .into()
+1026	    }
+1027	
+1028	    /// Get the dynamic type of the given vtable pointer.
+1029	    /// If `expected_trait` is `Some`, it must be a vtable for the given trait.
+1030	    pub fn get_ptr_vtable_ty(
+1031	        &self,
+1032	        ptr: Pointer<Option<M::Provenance>>,
+1033	        expected_trait: Option<&'tcx ty::List<ty::PolyExistentialPredicate<'tcx>>>,
+1034	    ) -> InterpResult<'tcx, Ty<'tcx>> {
+1035	        trace!("get_ptr_vtable({:?})", ptr);
+1036	        let (alloc_id, offset, _tag) = self.ptr_get_alloc_id(ptr, 0)?;
+1037	        if offset.bytes() != 0 {
+1038	            throw_ub!(InvalidVTablePointer(Pointer::new(alloc_id, offset)))
+1039	        }
+1040	        let Some(GlobalAlloc::VTable(ty, vtable_dyn_type)) =
+1041	            self.tcx.try_get_global_alloc(alloc_id)
+1042	        else {
+1043	            throw_ub!(InvalidVTablePointer(Pointer::new(alloc_id, offset)))
+1044	        };
+1045	        if let Some(expected_dyn_type) = expected_trait {
+1046	            self.check_vtable_for_type(vtable_dyn_type, expected_dyn_type)?;
+1047	        }
+1048	        interp_ok(ty)
+1049	    }
+1050	
+1051	    pub fn alloc_mark_immutable(&mut self, id: AllocId) -> InterpResult<'tcx> {
+1052	        self.get_alloc_raw_mut(id)?.0.mutability = Mutability::Not;
+1053	        interp_ok(())
+1054	    }
+1055	
+1056	    /// Visit all allocations reachable from the given start set, by recursively traversing the
+1057	    /// provenance information of those allocations.
+1058	    pub fn visit_reachable_allocs(
+1059	        &mut self,
+1060	        start: Vec<AllocId>,
+1061	        mut visit: impl FnMut(&mut Self, AllocId, &AllocInfo) -> InterpResult<'tcx>,
+1062	    ) -> InterpResult<'tcx> {
+1063	        let mut done = FxHashSet::default();
+1064	        let mut todo = start;
+1065	        while let Some(id) = todo.pop() {
+1066	            if !done.insert(id) {
+1067	                // We already saw this allocation before, don't process it again.
+1068	                continue;
+1069	            }
+1070	            let info = self.get_alloc_info(id);
+1071	
+1072	            // Recurse, if there is data here.
+1073	            // Do this *before* invoking the callback, as the callback might mutate the
+1074	            // allocation and e.g. replace all provenance by wildcards!
+1075	            if matches!(info.kind, AllocKind::LiveData) {
+1076	                let alloc = self.get_alloc_raw(id)?;
+1077	                for prov in alloc.provenance().provenances() {
+1078	                    if let Some(id) = prov.get_alloc_id() {
+1079	                        todo.push(id);
+1080	                    }
+1081	                }
+1082	            }
+1083	
+1084	            // Call the callback.
+1085	            visit(self, id, &info)?;
+1086	        }
+1087	        interp_ok(())
+1088	    }
+1089	
+1090	    /// Create a lazy debug printer that prints the given allocation and all allocations it points
+1091	    /// to, recursively.
+1092	    #[must_use]
+1093	    pub fn dump_alloc<'a>(&'a self, id: AllocId) -> DumpAllocs<'a, 'tcx, M> {
+1094	        self.dump_allocs(vec![id])
+1095	    }
+1096	
+1097	    /// Create a lazy debug printer for a list of allocations and all allocations they point to,
+1098	    /// recursively.
+1099	    #[must_use]
+1100	    pub fn dump_allocs<'a>(&'a self, mut allocs: Vec<AllocId>) -> DumpAllocs<'a, 'tcx, M> {
+1101	        allocs.sort();
+1102	        allocs.dedup();
+1103	        DumpAllocs { ecx: self, allocs }
+1104	    }
+1105	
+1106	    /// Print the allocation's bytes, without any nested allocations.
+1107	    pub fn print_alloc_bytes_for_diagnostics(&self, id: AllocId) -> String {
+1108	        // Using the "raw" access to avoid the `before_alloc_read` hook, we specifically
+1109	        // want to be able to read all memory for diagnostics, even if that is cyclic.
+1110	        let alloc = self.get_alloc_raw(id).unwrap();
+1111	        let mut bytes = String::new();
+1112	        if alloc.size() != Size::ZERO {
+1113	            bytes = "\n".into();
+1114	            // FIXME(translation) there might be pieces that are translatable.
+1115	            rustc_middle::mir::pretty::write_allocation_bytes(*self.tcx, alloc, &mut bytes, "    ")
+1116	                .unwrap();
+1117	        }
+1118	        bytes
+1119	    }
+1120	
+1121	    /// Find leaked allocations, remove them from memory and return them. Allocations reachable from
+1122	    /// `static_roots` or a `Global` allocation are not considered leaked, as well as leaks whose
+1123	    /// kind's `may_leak()` returns true.
+1124	    ///
+1125	    /// This is highly destructive, no more execution can happen after this!
+1126	    pub fn take_leaked_allocations(
+1127	        &mut self,
+1128	        static_roots: impl FnOnce(&Self) -> &[AllocId],
+1129	    ) -> Vec<(AllocId, MemoryKind<M::MemoryKind>, Allocation<M::Provenance, M::AllocExtra, M::Bytes>)>
+1130	    {
+1131	        // Collect the set of allocations that are *reachable* from `Global` allocations.
+1132	        let reachable = {
+1133	            let mut reachable = FxHashSet::default();
+1134	            let global_kind = M::GLOBAL_KIND.map(MemoryKind::Machine);
+1135	            let mut todo: Vec<_> =
+1136	                self.memory.alloc_map.filter_map_collect(move |&id, &(kind, _)| {
+1137	                    if Some(kind) == global_kind { Some(id) } else { None }
+1138	                });
+1139	            todo.extend(static_roots(self));
+1140	            while let Some(id) = todo.pop() {
+1141	                if reachable.insert(id) {
+1142	                    // This is a new allocation, add the allocations it points to `todo`.
+1143	                    // We only need to care about `alloc_map` memory here, as entirely unchanged
+1144	                    // global memory cannot point to memory relevant for the leak check.
+1145	                    if let Some((_, alloc)) = self.memory.alloc_map.get(id) {
+1146	                        todo.extend(
+1147	                            alloc.provenance().provenances().filter_map(|prov| prov.get_alloc_id()),
+1148	                        );
+1149	                    }
+1150	                }
+1151	            }
+1152	            reachable
+1153	        };
+1154	
+1155	        // All allocations that are *not* `reachable` and *not* `may_leak` are considered leaking.
+1156	        let leaked: Vec<_> = self.memory.alloc_map.filter_map_collect(|&id, &(kind, _)| {
+1157	            if kind.may_leak() || reachable.contains(&id) { None } else { Some(id) }
+1158	        });
+1159	        let mut result = Vec::new();
+1160	        for &id in leaked.iter() {
+1161	            let (kind, alloc) = self.memory.alloc_map.remove(&id).unwrap();
+1162	            result.push((id, kind, alloc));
+1163	        }
+1164	        result
+1165	    }
+1166	
+1167	    /// Runs the closure in "validation" mode, which means the machine's memory read hooks will be
+1168	    /// suppressed. Needless to say, this must only be set with great care! Cannot be nested.
+1169	    ///
+1170	    /// We do this so Miri's allocation access tracking does not show the validation
+1171	    /// reads as spurious accesses.
+1172	    pub fn run_for_validation_mut<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+1173	        // This deliberately uses `==` on `bool` to follow the pattern
+1174	        // `assert!(val.replace(new) == old)`.
+1175	        assert!(
+1176	            self.memory.validation_in_progress.replace(true) == false,
+1177	            "`validation_in_progress` was already set"
+1178	        );
+1179	        let res = f(self);
+1180	        assert!(
+1181	            self.memory.validation_in_progress.replace(false) == true,
+1182	            "`validation_in_progress` was unset by someone else"
+1183	        );
+1184	        res
+1185	    }
+1186	
+1187	    /// Runs the closure in "validation" mode, which means the machine's memory read hooks will be
+1188	    /// suppressed. Needless to say, this must only be set with great care! Cannot be nested.
+1189	    ///
+1190	    /// We do this so Miri's allocation access tracking does not show the validation
+1191	    /// reads as spurious accesses.
+1192	    pub fn run_for_validation_ref<R>(&self, f: impl FnOnce(&Self) -> R) -> R {
+1193	        // This deliberately uses `==` on `bool` to follow the pattern
+1194	        // `assert!(val.replace(new) == old)`.
+1195	        assert!(
+1196	            self.memory.validation_in_progress.replace(true) == false,
+1197	            "`validation_in_progress` was already set"
+1198	        );
+1199	        let res = f(self);
+1200	        assert!(
+1201	            self.memory.validation_in_progress.replace(false) == true,
+1202	            "`validation_in_progress` was unset by someone else"
+1203	        );
+1204	        res
+1205	    }
+1206	
+1207	    pub(super) fn validation_in_progress(&self) -> bool {
+1208	        self.memory.validation_in_progress.get()
+1209	    }
+1210	}
+1211	
+1212	#[doc(hidden)]
+1213	/// There's no way to use this directly, it's just a helper struct for the `dump_alloc(s)` methods.
+1214	pub struct DumpAllocs<'a, 'tcx, M: Machine<'tcx>> {
+1215	    ecx: &'a InterpCx<'tcx, M>,
+1216	    allocs: Vec<AllocId>,
+1217	}
+1218	
+1219	impl<'a, 'tcx, M: Machine<'tcx>> std::fmt::Debug for DumpAllocs<'a, 'tcx, M> {
+1220	    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+1221	        // Cannot be a closure because it is generic in `Prov`, `Extra`.
+1222	        fn write_allocation_track_relocs<'tcx, Prov: Provenance, Extra, Bytes: AllocBytes>(
+1223	            fmt: &mut std::fmt::Formatter<'_>,
+1224	            tcx: TyCtxt<'tcx>,
+1225	            allocs_to_print: &mut VecDeque<AllocId>,
+1226	            alloc: &Allocation<Prov, Extra, Bytes>,
+1227	        ) -> std::fmt::Result {
+1228	            for alloc_id in alloc.provenance().provenances().filter_map(|prov| prov.get_alloc_id())
+1229	            {
+1230	                allocs_to_print.push_back(alloc_id);
+1231	            }
+1232	            write!(fmt, "{}", display_allocation(tcx, alloc))
+1233	        }
+1234	
+1235	        let mut allocs_to_print: VecDeque<_> = self.allocs.iter().copied().collect();
+1236	        // `allocs_printed` contains all allocations that we have already printed.
+1237	        let mut allocs_printed = FxHashSet::default();
+1238	
+1239	        while let Some(id) = allocs_to_print.pop_front() {
+1240	            if !allocs_printed.insert(id) {
+1241	                // Already printed, so skip this.
+1242	                continue;
+1243	            }
+1244	
+1245	            write!(fmt, "{id:?}")?;
+1246	            match self.ecx.memory.alloc_map.get(id) {
+1247	                Some((kind, alloc)) => {
+1248	                    // normal alloc
+1249	                    write!(fmt, " ({kind}, ")?;
+1250	                    write_allocation_track_relocs(
+1251	                        &mut *fmt,
+1252	                        *self.ecx.tcx,
+1253	                        &mut allocs_to_print,
+1254	                        alloc,
+1255	                    )?;
+1256	                }
+1257	                None => {
+1258	                    // global alloc
+1259	                    match self.ecx.tcx.try_get_global_alloc(id) {
+1260	                        Some(GlobalAlloc::Memory(alloc)) => {
+1261	                            write!(fmt, " (unchanged global, ")?;
+1262	                            write_allocation_track_relocs(
+1263	                                &mut *fmt,
+1264	                                *self.ecx.tcx,
+1265	                                &mut allocs_to_print,
+1266	                                alloc.inner(),
+1267	                            )?;
+1268	                        }
+1269	                        Some(GlobalAlloc::Function { instance, .. }) => {
+1270	                            write!(fmt, " (fn: {instance})")?;
+1271	                        }
+1272	                        Some(GlobalAlloc::VTable(ty, dyn_ty)) => {
+1273	                            write!(fmt, " (vtable: impl {dyn_ty} for {ty})")?;
+1274	                        }
+1275	                        Some(GlobalAlloc::TypeId { ty }) => {
+1276	                            write!(fmt, " (typeid for {ty})")?;
+1277	                        }
+1278	                        Some(GlobalAlloc::Static(did)) => {
+1279	                            write!(fmt, " (static: {})", self.ecx.tcx.def_path_str(did))?;
+1280	                        }
+1281	                        None => {
+1282	                            write!(fmt, " (deallocated)")?;
+1283	                        }
+1284	                    }
+1285	                }
+1286	            }
+1287	            writeln!(fmt)?;
+1288	        }
+1289	        Ok(())
+1290	    }
+1291	}
+1292	
+1293	/// Reading and writing.
+1294	impl<'a, 'tcx, Prov: Provenance, Extra, Bytes: AllocBytes>
+1295	    AllocRefMut<'a, 'tcx, Prov, Extra, Bytes>
+1296	{
+1297	    pub fn as_ref<'b>(&'b self) -> AllocRef<'b, 'tcx, Prov, Extra, Bytes> {
+1298	        AllocRef { alloc: self.alloc, range: self.range, tcx: self.tcx, alloc_id: self.alloc_id }
+1299	    }
+1300	
+1301	    /// `range` is relative to this allocation reference, not the base of the allocation.
+1302	    pub fn write_scalar(&mut self, range: AllocRange, val: Scalar<Prov>) -> InterpResult<'tcx> {
+1303	        let range = self.range.subrange(range);
+1304	        debug!("write_scalar at {:?}{range:?}: {val:?}", self.alloc_id);
+1305	
+1306	        self.alloc
+1307	            .write_scalar(&self.tcx, range, val)
+1308	            .map_err(|e| e.to_interp_error(self.alloc_id))
+1309	            .into()
+1310	    }
+1311	
+1312	    /// `offset` is relative to this allocation reference, not the base of the allocation.
+1313	    pub fn write_ptr_sized(&mut self, offset: Size, val: Scalar<Prov>) -> InterpResult<'tcx> {
+1314	        self.write_scalar(alloc_range(offset, self.tcx.data_layout().pointer_size()), val)
+1315	    }
+1316	
+1317	    /// Mark the given sub-range (relative to this allocation reference) as uninitialized.
+1318	    pub fn write_uninit(&mut self, range: AllocRange) {
+1319	        let range = self.range.subrange(range);
+1320	
+1321	        self.alloc.write_uninit(&self.tcx, range);
+1322	    }
+1323	
+1324	    /// Mark the entire referenced range as uninitialized
+1325	    pub fn write_uninit_full(&mut self) {
+1326	        self.alloc.write_uninit(&self.tcx, self.range);
+1327	    }
+1328	
+1329	    /// Remove all provenance in the reference range.
+1330	    pub fn clear_provenance(&mut self) {
+1331	        self.alloc.clear_provenance(&self.tcx, self.range);
+1332	    }
+1333	}
+1334	
+1335	impl<'a, 'tcx, Prov: Provenance, Extra, Bytes: AllocBytes> AllocRef<'a, 'tcx, Prov, Extra, Bytes> {
+1336	    /// `range` is relative to this allocation reference, not the base of the allocation.
+1337	    pub fn read_scalar(
+1338	        &self,
+1339	        range: AllocRange,
+1340	        read_provenance: bool,
+1341	    ) -> InterpResult<'tcx, Scalar<Prov>> {
+1342	        let range = self.range.subrange(range);
+1343	        self.alloc
+1344	            .read_scalar(&self.tcx, range, read_provenance)
+1345	            .map_err(|e| e.to_interp_error(self.alloc_id))
+1346	            .into()
+1347	    }
+1348	
+1349	    /// `range` is relative to this allocation reference, not the base of the allocation.
+1350	    pub fn read_integer(&self, range: AllocRange) -> InterpResult<'tcx, Scalar<Prov>> {
+1351	        self.read_scalar(range, /*read_provenance*/ false)
+1352	    }
+1353	
+1354	    /// `offset` is relative to this allocation reference, not the base of the allocation.
+1355	    pub fn read_pointer(&self, offset: Size) -> InterpResult<'tcx, Scalar<Prov>> {
+1356	        self.read_scalar(
+1357	            alloc_range(offset, self.tcx.data_layout().pointer_size()),
+1358	            /*read_provenance*/ true,
+1359	        )
+1360	    }
+1361	
+1362	    /// `range` is relative to this allocation reference, not the base of the allocation.
+1363	    pub fn get_bytes_strip_provenance<'b>(&'b self) -> InterpResult<'tcx, &'a [u8]> {
+1364	        self.alloc
+1365	            .get_bytes_strip_provenance(&self.tcx, self.range)
+1366	            .map_err(|e| e.to_interp_error(self.alloc_id))
+1367	            .into()
+1368	    }
+1369	
+1370	    /// Returns whether the allocation has provenance anywhere in the range of the `AllocRef`.
+1371	    pub fn has_provenance(&self) -> bool {
+1372	        !self.alloc.provenance().range_empty(self.range, &self.tcx)
+1373	    }
+1374	}
+1375	
+1376	impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
+1377	    /// Reads the given number of bytes from memory, and strips their provenance if possible.
+1378	    /// Returns them as a slice.
+1379	    ///
+1380	    /// Performs appropriate bounds checks.
+1381	    pub fn read_bytes_ptr_strip_provenance(
+1382	        &self,
+1383	        ptr: Pointer<Option<M::Provenance>>,
+1384	        size: Size,
+1385	    ) -> InterpResult<'tcx, &[u8]> {
+1386	        let Some(alloc_ref) = self.get_ptr_alloc(ptr, size)? else {
+1387	            // zero-sized access
+1388	            return interp_ok(&[]);
+1389	        };
+1390	        // Side-step AllocRef and directly access the underlying bytes more efficiently.
+1391	        // (We are staying inside the bounds here so all is good.)
+1392	        interp_ok(
+1393	            alloc_ref
+1394	                .alloc
+1395	                .get_bytes_strip_provenance(&alloc_ref.tcx, alloc_ref.range)
+1396	                .map_err(|e| e.to_interp_error(alloc_ref.alloc_id))?,
+1397	        )
+1398	    }
+1399	
+1400	    /// Writes the given stream of bytes into memory.
+1401	    ///
+1402	    /// Performs appropriate bounds checks.
+1403	    pub fn write_bytes_ptr(
+1404	        &mut self,
+1405	        ptr: Pointer<Option<M::Provenance>>,
+1406	        src: impl IntoIterator<Item = u8>,
+1407	    ) -> InterpResult<'tcx> {
+1408	        let mut src = src.into_iter();
+1409	        let (lower, upper) = src.size_hint();
+1410	        let len = upper.expect("can only write bounded iterators");
+1411	        assert_eq!(lower, len, "can only write iterators with a precise length");
+1412	
+1413	        let size = Size::from_bytes(len);
+1414	        let Some(alloc_ref) = self.get_ptr_alloc_mut(ptr, size)? else {
+1415	            // zero-sized access
+1416	            assert_matches!(src.next(), None, "iterator said it was empty but returned an element");
+1417	            return interp_ok(());
+1418	        };
+1419	
+1420	        // Side-step AllocRef and directly access the underlying bytes more efficiently.
+1421	        // (We are staying inside the bounds here and all bytes do get overwritten so all is good.)
+1422	        let bytes =
+1423	            alloc_ref.alloc.get_bytes_unchecked_for_overwrite(&alloc_ref.tcx, alloc_ref.range);
+1424	        // `zip` would stop when the first iterator ends; we want to definitely
+1425	        // cover all of `bytes`.
+1426	        for dest in bytes {
+1427	            *dest = src.next().expect("iterator was shorter than it said it would be");
+1428	        }
+1429	        assert_matches!(src.next(), None, "iterator was longer than it said it would be");
+1430	        interp_ok(())
+1431	    }
+1432	
+1433	    pub fn mem_copy(
+1434	        &mut self,
+1435	        src: Pointer<Option<M::Provenance>>,
+1436	        dest: Pointer<Option<M::Provenance>>,
+1437	        size: Size,
+1438	        nonoverlapping: bool,
+1439	    ) -> InterpResult<'tcx> {
+1440	        self.mem_copy_repeatedly(src, dest, size, 1, nonoverlapping)
+1441	    }
+1442	
+1443	    /// Performs `num_copies` many copies of `size` many bytes from `src` to `dest + i*size` (where
+1444	    /// `i` is the index of the copy).
+1445	    ///
+1446	    /// Either `nonoverlapping` must be true or `num_copies` must be 1; doing repeated copies that
+1447	    /// may overlap is not supported.
+1448	    pub fn mem_copy_repeatedly(
+1449	        &mut self,
+1450	        src: Pointer<Option<M::Provenance>>,
+1451	        dest: Pointer<Option<M::Provenance>>,
+1452	        size: Size,
+1453	        num_copies: u64,
+1454	        nonoverlapping: bool,
+1455	    ) -> InterpResult<'tcx> {
+1456	        let tcx = self.tcx;
+1457	        // We need to do our own bounds-checks.
+1458	        let src_parts = self.get_ptr_access(src, size)?;
+1459	        let dest_parts = self.get_ptr_access(dest, size * num_copies)?; // `Size` multiplication
+1460	
+1461	        // Similar to `get_ptr_alloc`, we need to call `before_alloc_access` even for zero-sized
+1462	        // reads. However, just like in `get_ptr_alloc_mut`, the write part is okay to skip for
+1463	        // zero-sized writes.
+1464	        if let Ok((alloc_id, ..)) = self.ptr_try_get_alloc_id(src, size.bytes().try_into().unwrap())
+1465	        {
+1466	            M::before_alloc_access(tcx, &self.machine, alloc_id)?;
+1467	        }
+1468	
+1469	        // FIXME: we look up both allocations twice here, once before for the `check_ptr_access`
+1470	        // and once below to get the underlying `&[mut] Allocation`.
+1471	
+1472	        // Source alloc preparations and access hooks.
+1473	        let Some((src_alloc_id, src_offset, src_prov)) = src_parts else {
+1474	            // Zero-sized *source*, that means dest is also zero-sized and we have nothing to do.
+1475	            return interp_ok(());
+1476	        };
+1477	        let src_alloc = self.get_alloc_raw(src_alloc_id)?;
+1478	        let src_range = alloc_range(src_offset, size);
+1479	        assert!(!self.memory.validation_in_progress.get(), "we can't be copying during validation");
+1480	
+1481	        // Trigger read hook.
+1482	        // For the overlapping case, it is crucial that we trigger the read hook
+1483	        // before the write hook -- the aliasing model cares about the order.
+1484	        M::before_memory_read(
+1485	            tcx,
+1486	            &self.machine,
+1487	            &src_alloc.extra,
+1488	            src,
+1489	            (src_alloc_id, src_prov),
+1490	            src_range,
+1491	        )?;
+1492	        // We need the `dest` ptr for the next operation, so we get it now.
+1493	        // We already did the source checks and called the hooks so we are good to return early.
+1494	        let Some((dest_alloc_id, dest_offset, dest_prov)) = dest_parts else {
+1495	            // Zero-sized *destination*.
+1496	            return interp_ok(());
+1497	        };
+1498	
+1499	        // Prepare getting source provenance.
+1500	        let src_bytes = src_alloc.get_bytes_unchecked(src_range).as_ptr(); // raw ptr, so we can also get a ptr to the destination allocation
+1501	        // First copy the provenance to a temporary buffer, because
+1502	        // `get_bytes_unchecked_for_overwrite_ptr` will clear the provenance (in preparation for
+1503	        // inserting the new provenance), and that can overlap with the source range.
+1504	        let provenance = src_alloc.provenance_prepare_copy(src_range, self);
+1505	        // Prepare a copy of the initialization mask.
+1506	        let init = src_alloc.init_mask().prepare_copy(src_range);
+1507	
+1508	        // Destination alloc preparations...
+1509	        let (dest_alloc, machine) = self.get_alloc_raw_mut(dest_alloc_id)?;
+1510	        let dest_range = alloc_range(dest_offset, size * num_copies);
+1511	        // ...and access hooks.
+1512	        M::before_alloc_access(tcx, machine, dest_alloc_id)?;
+1513	        M::before_memory_write(
+1514	            tcx,
+1515	            machine,
+1516	            &mut dest_alloc.extra,
+1517	            dest,
+1518	            (dest_alloc_id, dest_prov),
+1519	            dest_range,
+1520	        )?;
+1521	        // Yes we do overwrite all bytes in `dest_bytes`.
+1522	        let dest_bytes =
+1523	            dest_alloc.get_bytes_unchecked_for_overwrite_ptr(&tcx, dest_range).as_mut_ptr();
+1524	
+1525	        if init.no_bytes_init() {
+1526	            // Fast path: If all bytes are `uninit` then there is nothing to copy. The target range
+1527	            // is marked as uninitialized but we otherwise omit changing the byte representation which may
+1528	            // be arbitrary for uninitialized bytes.
+1529	            // This also avoids writing to the target bytes so that the backing allocation is never
+1530	            // touched if the bytes stay uninitialized for the whole interpreter execution. On contemporary
+1531	            // operating system this can avoid physically allocating the page.
+1532	            dest_alloc.write_uninit(&tcx, dest_range);
+1533	            // `write_uninit` also resets the provenance, so we are done.
+1534	            return interp_ok(());
+1535	        }
+1536	
+1537	        // SAFE: The above indexing would have panicked if there weren't at least `size` bytes
+1538	        // behind `src` and `dest`. Also, we use the overlapping-safe `ptr::copy` if `src` and
+1539	        // `dest` could possibly overlap.
+1540	        // The pointers above remain valid even if the `HashMap` table is moved around because they
+1541	        // point into the `Vec` storing the bytes.
+1542	        unsafe {
+1543	            if src_alloc_id == dest_alloc_id {
+1544	                if nonoverlapping {
+1545	                    // `Size` additions
+1546	                    if (src_offset <= dest_offset && src_offset + size > dest_offset)
+1547	                        || (dest_offset <= src_offset && dest_offset + size > src_offset)
+1548	                    {
+1549	                        throw_ub_custom!(fluent::const_eval_copy_nonoverlapping_overlapping);
+1550	                    }
+1551	                }
+1552	            }
+1553	            if num_copies > 1 {
+1554	                assert!(nonoverlapping, "multi-copy only supported in non-overlapping mode");
+1555	            }
+1556	
+1557	            let size_in_bytes = size.bytes_usize();
+1558	            // For particularly large arrays (where this is perf-sensitive) it's common that
+1559	            // we're writing a single byte repeatedly. So, optimize that case to a memset.
+1560	            if size_in_bytes == 1 {
+1561	                debug_assert!(num_copies >= 1); // we already handled the zero-sized cases above.
+1562	                // SAFETY: `src_bytes` would be read from anyway by `copy` below (num_copies >= 1).
+1563	                let value = *src_bytes;
+1564	                dest_bytes.write_bytes(value, (size * num_copies).bytes_usize());
+1565	            } else if src_alloc_id == dest_alloc_id {
+1566	                let mut dest_ptr = dest_bytes;
+1567	                for _ in 0..num_copies {
+1568	                    // Here we rely on `src` and `dest` being non-overlapping if there is more than
+1569	                    // one copy.
+1570	                    ptr::copy(src_bytes, dest_ptr, size_in_bytes);
+1571	                    dest_ptr = dest_ptr.add(size_in_bytes);
+1572	                }
+1573	            } else {
+1574	                let mut dest_ptr = dest_bytes;
+1575	                for _ in 0..num_copies {
+1576	                    ptr::copy_nonoverlapping(src_bytes, dest_ptr, size_in_bytes);
+1577	                    dest_ptr = dest_ptr.add(size_in_bytes);
+1578	                }
+1579	            }
+1580	        }
+1581	
+1582	        // now fill in all the "init" data
+1583	        dest_alloc.init_mask_apply_copy(
+1584	            init,
+1585	            alloc_range(dest_offset, size), // just a single copy (i.e., not full `dest_range`)
+1586	            num_copies,
+1587	        );
+1588	        // copy the provenance to the destination
+1589	        dest_alloc.provenance_apply_copy(provenance, alloc_range(dest_offset, size), num_copies);
+1590	
+1591	        interp_ok(())
+1592	    }
+1593	}
+1594	
+1595	/// Machine pointer introspection.
+1596	impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
+1597	    /// Test if this value might be null.
+1598	    /// If the machine does not support ptr-to-int casts, this is conservative.
+1599	    pub fn scalar_may_be_null(&self, scalar: Scalar<M::Provenance>) -> InterpResult<'tcx, bool> {
+1600	        match scalar.try_to_scalar_int() {
+1601	            Ok(int) => interp_ok(int.is_null()),
+1602	            Err(_) => {
+1603	                // We can't cast this pointer to an integer. Can only happen during CTFE.
+1604	                let ptr = scalar.to_pointer(self)?;
+1605	                match self.ptr_try_get_alloc_id(ptr, 0) {
+1606	                    Ok((alloc_id, offset, _)) => {
+1607	                        let info = self.get_alloc_info(alloc_id);
+1608	                        if matches!(info.kind, AllocKind::TypeId) {
+1609	                            // We *could* actually precisely answer this question since here,
+1610	                            // the offset *is* the integer value. But the entire point of making
+1611	                            // this a pointer is not to leak the integer value, so we say everything
+1612	                            // might be null.
+1613	                            return interp_ok(true);
+1614	                        }
+1615	                        // If the pointer is in-bounds (including "at the end"), it is definitely not null.
+1616	                        if offset <= info.size {
+1617	                            return interp_ok(false);
+1618	                        }
+1619	                        // If the allocation is N-aligned, and the offset is not divisible by N,
+1620	                        // then `base + offset` has a non-zero remainder after division by `N`,
+1621	                        // which means `base + offset` cannot be null.
+1622	                        if !offset.bytes().is_multiple_of(info.align.bytes()) {
+1623	                            return interp_ok(false);
+1624	                        }
+1625	                        // We don't know enough, this might be null.
+1626	                        interp_ok(true)
+1627	                    }
+1628	                    Err(_offset) => bug!("a non-int scalar is always a pointer"),
+1629	                }
+1630	            }
+1631	        }
+1632	    }
+1633	
+1634	    /// Turning a "maybe pointer" into a proper pointer (and some information
+1635	    /// about where it points), or an absolute address.
+1636	    ///
+1637	    /// `size` says how many bytes of memory are expected at that pointer. This is largely only used
+1638	    /// for error messages; however, the *sign* of `size` can be used to disambiguate situations
+1639	    /// where a wildcard pointer sits right in between two allocations.
+1640	    /// It is almost always okay to just set the size to 0; this will be treated like a positive size
+1641	    /// for handling wildcard pointers.
+1642	    ///
+1643	    /// The result must be used immediately; it is not allowed to convert
+1644	    /// the returned data back into a `Pointer` and store that in machine state.
+1645	    /// (In fact that's not even possible since `M::ProvenanceExtra` is generic and
+1646	    /// we don't have an operation to turn it back into `M::Provenance`.)
+1647	    pub fn ptr_try_get_alloc_id(
+1648	        &self,
+1649	        ptr: Pointer<Option<M::Provenance>>,
+1650	        size: i64,
+1651	    ) -> Result<(AllocId, Size, M::ProvenanceExtra), u64> {
+1652	        match ptr.into_pointer_or_addr() {
+1653	            Ok(ptr) => match M::ptr_get_alloc(self, ptr, size) {
+   0x00005dc34007c259 <+57>:	4c 89 64 24 50     	mov    QWORD PTR [rsp+0x50],r12
+   0x00005dc34007c25e <+62>:	4c 89 6c 24 58     	mov    QWORD PTR [rsp+0x58],r13
+   0x00005dc34007c263 <+67>:	48 89 5c 24 60     	mov    QWORD PTR [rsp+0x60],rbx
+   0x00005dc34007c268 <+72>:	48 8d 74 24 50     	lea    rsi,[rsp+0x50]
+
+src/machine.rs:
+1502	        let rel = ecx.ptr_get_alloc(ptr, size);
+   0x00005dc34007c26d <+77>:	31 d2              	xor    edx,edx
+   0x00005dc34007c26f <+79>:	e8 6c d2 01 00     	call   0x5dc3400994e0 <miri::alloc_addresses::EvalContextExt::ptr_get_alloc<rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>>>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs:
+1164	        match self {
+   0x00005dc34007c274 <+84>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c277 <+87>:	0f 84 02 01 00 00  	je     0x5dc34007c37f <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+351>
+
+src/machine.rs:
+1505	            let tag = match ptr.provenance {
+   0x00005dc34007c27d <+93>:	4d 85 e4           	test   r12,r12
+   0x00005dc34007c280 <+96>:	4d 0f 44 ec        	cmove  r13,r12
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+369	        let (alloc_id, offset, prov) = self.ptr_get_alloc_id(ptr, 0)?;
+   0x00005dc34007c284 <+100>:	48 89 44 24 48     	mov    QWORD PTR [rsp+0x48],rax
+
+370	        trace!("deallocating: {alloc_id:?}");
+371	
+372	        if offset.bytes() != 0 {
+   0x00005dc34007c289 <+105>:	48 85 d2           	test   rdx,rdx
+   0x00005dc34007c28c <+108>:	0f 84 39 01 00 00  	je     0x5dc34007c3cb <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+427>
+
+374	                fluent::const_eval_realloc_or_alloc_with_offset,
+375	                ptr = format!("{ptr:?}"),
+   0x00005dc34007c292 <+114>:	48 89 6c 24 50     	mov    QWORD PTR [rsp+0x50],rbp
+   0x00005dc34007c297 <+119>:	48 8d 05 72 85 f9 ff	lea    rax,[rip+0xfffffffffff98572]        # 0x5dc340014810 <rustc_middle::mir::interpret::pointer::{impl#7}::fmt<miri::machine::Provenance>>
+   0x00005dc34007c29e <+126>:	48 89 44 24 58     	mov    QWORD PTR [rsp+0x58],rax
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/fmt.rs:
+654	    args.as_str().map_or_else(|| format_inner(args), crate::borrow::ToOwned::to_owned)
+   0x00005dc34007c2a3 <+131>:	48 8d 35 86 2c a6 ff	lea    rsi,[rip+0xffffffffffa62c86]        # 0x5dc33fadef30 <anon.df358621639d0a97e4028eced345d673.192.llvm>
+   0x00005dc34007c2aa <+138>:	48 8d bc 24 30 02 00 00	lea    rdi,[rsp+0x230]
+   0x00005dc34007c2b2 <+146>:	48 8d 54 24 50     	lea    rdx,[rsp+0x50]
+   0x00005dc34007c2b7 <+151>:	ff 15 d3 06 52 00  	call   QWORD PTR [rip+0x5206d3]        # 0x5dc34059c990
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+373	            throw_ub_custom!(
+   0x00005dc34007c2bd <+157>:	48 8b 84 24 40 02 00 00	mov    rax,QWORD PTR [rsp+0x240]
+   0x00005dc34007c2c5 <+165>:	48 89 44 24 60     	mov    QWORD PTR [rsp+0x60],rax
+   0x00005dc34007c2ca <+170>:	0f 10 84 24 30 02 00 00	movups xmm0,XMMWORD PTR [rsp+0x230]
+   0x00005dc34007c2d2 <+178>:	0f 29 44 24 50     	movaps XMMWORD PTR [rsp+0x50],xmm0
+   0x00005dc34007c2d7 <+183>:	48 8d 05 7f 30 a9 ff	lea    rax,[rip+0xffffffffffa9307f]        # 0x5dc33fb0f35d
+   0x00005dc34007c2de <+190>:	48 89 44 24 68     	mov    QWORD PTR [rsp+0x68],rax
+   0x00005dc34007c2e3 <+195>:	48 c7 44 24 70 07 00 00 00	mov    QWORD PTR [rsp+0x70],0x7
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/alloc/layout.rs:
+128	            ) => Layout::is_size_align_valid(size, align)
+   0x00005dc34007c2ec <+204>:	bf 28 00 00 00     	mov    edi,0x28
+   0x00005dc34007c2f1 <+209>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c2f6 <+214>:	ff 15 04 06 52 00  	call   QWORD PTR [rip+0x520604]        # 0x5dc34059c900
+   0x00005dc34007c2fc <+220>:	84 c0              	test   al,al
+   0x00005dc34007c2fe <+222>:	0f 84 85 08 00 00  	je     0x5dc34007cb89 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2409>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:
+93	        __rust_no_alloc_shim_is_unstable_v2();
+   0x00005dc34007c304 <+228>:	ff 15 be 06 52 00  	call   QWORD PTR [rip+0x5206be]        # 0x5dc34059c9c8
+
+94	
+95	        __rust_alloc(layout.size(), layout.align())
+   0x00005dc34007c30a <+234>:	bf 28 00 00 00     	mov    edi,0x28
+   0x00005dc34007c30f <+239>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c314 <+244>:	ff 15 b6 06 52 00  	call   QWORD PTR [rip+0x5206b6]        # 0x5dc34059c9d0
+
+116	}
+117	
+118	/// Reallocates memory with the global allocator.
+119	///
+120	/// This function forwards calls to the [`GlobalAlloc::realloc`] method
+121	/// of the allocator registered with the `#[global_allocator]` attribute
+122	/// if there is one, or the `std` crate’s default.
+123	///
+124	/// This function is expected to be deprecated in favor of the `grow` and `shrink` methods
+125	/// of the [`Global`] type when it and the [`Allocator`] trait become stable.
+126	///
+127	/// # Safety
+128	///
+129	/// See [`GlobalAlloc::realloc`].
+130	#[stable(feature = "global_alloc", since = "1.28.0")]
+131	#[must_use = "losing the pointer will leak memory"]
+132	#[inline]
+133	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+134	pub unsafe fn realloc(ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+135	    unsafe { __rust_realloc(ptr, layout.size(), layout.align(), new_size) }
+136	}
+137	
+138	/// Allocates zero-initialized memory with the global allocator.
+139	///
+140	/// This function forwards calls to the [`GlobalAlloc::alloc_zeroed`] method
+141	/// of the allocator registered with the `#[global_allocator]` attribute
+142	/// if there is one, or the `std` crate’s default.
+143	///
+144	/// This function is expected to be deprecated in favor of the `allocate_zeroed` method
+145	/// of the [`Global`] type when it and the [`Allocator`] trait become stable.
+146	///
+147	/// # Safety
+148	///
+149	/// See [`GlobalAlloc::alloc_zeroed`].
+150	///
+151	/// # Examples
+152	///
+153	/// ```
+154	/// use std::alloc::{alloc_zeroed, dealloc, handle_alloc_error, Layout};
+155	///
+156	/// unsafe {
+157	///     let layout = Layout::new::<u16>();
+158	///     let ptr = alloc_zeroed(layout);
+159	///     if ptr.is_null() {
+160	///         handle_alloc_error(layout);
+161	///     }
+162	///
+163	///     assert_eq!(*(ptr as *mut u16), 0);
+164	///
+165	///     dealloc(ptr, layout);
+166	/// }
+167	/// ```
+168	#[stable(feature = "global_alloc", since = "1.28.0")]
+169	#[must_use = "losing the pointer will leak memory"]
+170	#[inline]
+171	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+172	pub unsafe fn alloc_zeroed(layout: Layout) -> *mut u8 {
+173	    unsafe {
+174	        // Make sure we don't accidentally allow omitting the allocator shim in
+175	        // stable code until it is actually stabilized.
+176	        __rust_no_alloc_shim_is_unstable_v2();
+177	
+178	        __rust_alloc_zeroed(layout.size(), layout.align())
+179	    }
+180	}
+181	
+182	impl Global {
+183	    #[inline]
+184	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+185	    fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
+186	        match layout.size() {
+187	            0 => Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0)),
+188	            // SAFETY: `layout` is non-zero in size,
+189	            size => unsafe {
+190	                let raw_ptr = if zeroed { alloc_zeroed(layout) } else { alloc(layout) };
+191	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+192	                Ok(NonNull::slice_from_raw_parts(ptr, size))
+193	            },
+194	        }
+195	    }
+196	
+197	    // SAFETY: Same as `Allocator::grow`
+198	    #[inline]
+199	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+200	    unsafe fn grow_impl(
+201	        &self,
+202	        ptr: NonNull<u8>,
+203	        old_layout: Layout,
+204	        new_layout: Layout,
+205	        zeroed: bool,
+206	    ) -> Result<NonNull<[u8]>, AllocError> {
+207	        debug_assert!(
+208	            new_layout.size() >= old_layout.size(),
+209	            "`new_layout.size()` must be greater than or equal to `old_layout.size()`"
+210	        );
+211	
+212	        match old_layout.size() {
+213	            0 => self.alloc_impl(new_layout, zeroed),
+214	
+215	            // SAFETY: `new_size` is non-zero as `old_size` is greater than or equal to `new_size`
+216	            // as required by safety conditions. Other conditions must be upheld by the caller
+217	            old_size if old_layout.align() == new_layout.align() => unsafe {
+218	                let new_size = new_layout.size();
+219	
+220	                // `realloc` probably checks for `new_size >= old_layout.size()` or something similar.
+221	                hint::assert_unchecked(new_size >= old_layout.size());
+222	
+223	                let raw_ptr = realloc(ptr.as_ptr(), old_layout, new_size);
+224	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+225	                if zeroed {
+226	                    raw_ptr.add(old_size).write_bytes(0, new_size - old_size);
+227	                }
+228	                Ok(NonNull::slice_from_raw_parts(ptr, new_size))
+229	            },
+230	
+231	            // SAFETY: because `new_layout.size()` must be greater than or equal to `old_size`,
+232	            // both the old and new memory allocation are valid for reads and writes for `old_size`
+233	            // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
+234	            // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+235	            // for `dealloc` must be upheld by the caller.
+236	            old_size => unsafe {
+237	                let new_ptr = self.alloc_impl(new_layout, zeroed)?;
+238	                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), old_size);
+239	                self.deallocate(ptr, old_layout);
+240	                Ok(new_ptr)
+241	            },
+242	        }
+243	    }
+244	}
+245	
+246	#[unstable(feature = "allocator_api", issue = "32838")]
+247	unsafe impl Allocator for Global {
+248	    #[inline]
+249	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+250	    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+251	        self.alloc_impl(layout, false)
+252	    }
+253	
+254	    #[inline]
+255	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+256	    fn allocate_zeroed(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+257	        self.alloc_impl(layout, true)
+258	    }
+259	
+260	    #[inline]
+261	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+262	    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+263	        if layout.size() != 0 {
+264	            // SAFETY:
+265	            // * We have checked that `layout` is non-zero in size.
+266	            // * The caller is obligated to provide a layout that "fits", and in this case,
+267	            //   "fit" always means a layout that is equal to the original, because our
+268	            //   `allocate()`, `grow()`, and `shrink()` implementations never returns a larger
+269	            //   allocation than requested.
+270	            // * Other conditions must be upheld by the caller, as per `Allocator::deallocate()`'s
+271	            //   safety documentation.
+272	            unsafe { dealloc(ptr.as_ptr(), layout) }
+273	        }
+274	    }
+275	
+276	    #[inline]
+277	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+278	    unsafe fn grow(
+279	        &self,
+280	        ptr: NonNull<u8>,
+281	        old_layout: Layout,
+282	        new_layout: Layout,
+283	    ) -> Result<NonNull<[u8]>, AllocError> {
+284	        // SAFETY: all conditions must be upheld by the caller
+285	        unsafe { self.grow_impl(ptr, old_layout, new_layout, false) }
+286	    }
+287	
+288	    #[inline]
+289	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+290	    unsafe fn grow_zeroed(
+291	        &self,
+292	        ptr: NonNull<u8>,
+293	        old_layout: Layout,
+294	        new_layout: Layout,
+295	    ) -> Result<NonNull<[u8]>, AllocError> {
+296	        // SAFETY: all conditions must be upheld by the caller
+297	        unsafe { self.grow_impl(ptr, old_layout, new_layout, true) }
+298	    }
+299	
+300	    #[inline]
+301	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+302	    unsafe fn shrink(
+303	        &self,
+304	        ptr: NonNull<u8>,
+305	        old_layout: Layout,
+306	        new_layout: Layout,
+307	    ) -> Result<NonNull<[u8]>, AllocError> {
+308	        debug_assert!(
+309	            new_layout.size() <= old_layout.size(),
+310	            "`new_layout.size()` must be smaller than or equal to `old_layout.size()`"
+311	        );
+312	
+313	        match new_layout.size() {
+314	            // SAFETY: conditions must be upheld by the caller
+315	            0 => unsafe {
+316	                self.deallocate(ptr, old_layout);
+317	                Ok(NonNull::slice_from_raw_parts(new_layout.dangling(), 0))
+318	            },
+319	
+320	            // SAFETY: `new_size` is non-zero. Other conditions must be upheld by the caller
+321	            new_size if old_layout.align() == new_layout.align() => unsafe {
+322	                // `realloc` probably checks for `new_size <= old_layout.size()` or something similar.
+323	                hint::assert_unchecked(new_size <= old_layout.size());
+324	
+325	                let raw_ptr = realloc(ptr.as_ptr(), old_layout, new_size);
+326	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+327	                Ok(NonNull::slice_from_raw_parts(ptr, new_size))
+328	            },
+329	
+330	            // SAFETY: because `new_size` must be smaller than or equal to `old_layout.size()`,
+331	            // both the old and new memory allocation are valid for reads and writes for `new_size`
+332	            // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
+333	            // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+334	            // for `dealloc` must be upheld by the caller.
+335	            new_size => unsafe {
+336	                let new_ptr = self.allocate(new_layout)?;
+337	                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), new_size);
+338	                self.deallocate(ptr, old_layout);
+339	                Ok(new_ptr)
+340	            },
+341	        }
+342	    }
+343	}
+344	
+345	/// The allocator for `Box`.
+346	#[cfg(not(no_global_oom_handling))]
+347	#[lang = "exchange_malloc"]
+348	#[inline]
+349	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+350	unsafe fn exchange_malloc(size: usize, align: usize) -> *mut u8 {
+351	    let layout = unsafe { Layout::from_size_align_unchecked(size, align) };
+352	    match Global.allocate(layout) {
+   0x00005dc34007c31a <+250>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c31d <+253>:	0f 84 51 08 00 00  	je     0x5dc34007cb74 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2388>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:
+265	        return box_new(x);
+   0x00005dc34007c323 <+259>:	48 8b 4c 24 70     	mov    rcx,QWORD PTR [rsp+0x70]
+   0x00005dc34007c328 <+264>:	48 89 48 20        	mov    QWORD PTR [rax+0x20],rcx
+   0x00005dc34007c32c <+268>:	0f 28 44 24 50     	movaps xmm0,XMMWORD PTR [rsp+0x50]
+   0x00005dc34007c331 <+273>:	0f 28 4c 24 60     	movaps xmm1,XMMWORD PTR [rsp+0x60]
+   0x00005dc34007c336 <+278>:	0f 11 48 10        	movups XMMWORD PTR [rax+0x10],xmm1
+   0x00005dc34007c33a <+282>:	0f 11 00           	movups XMMWORD PTR [rax],xmm0
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+373	            throw_ub_custom!(
+   0x00005dc34007c33d <+285>:	48 8d 0d fc 9e 0b 00	lea    rcx,[rip+0xb9efc]        # 0x5dc340136240 <core::ops::function::FnOnce::call_once<rustc_const_eval::interpret::memory::{impl#5}::deallocate_ptr::{closure_env#1}<miri::machine::MiriMachine>, ()>>
+   0x00005dc34007c344 <+292>:	48 89 8c 24 60 02 00 00	mov    QWORD PTR [rsp+0x260],rcx
+   0x00005dc34007c34c <+300>:	48 89 84 24 68 02 00 00	mov    QWORD PTR [rsp+0x268],rax
+   0x00005dc34007c354 <+308>:	⚠️ warning: (Internal error: pc 0x5dc340355d48 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355d48 in address map, but not in symtab.)
+48 8d 05 ed 99 2d 00	lea    rax,[rip+0x2d99ed]        # 0x5dc340355d48
+   0x00005dc34007c35b <+315>:	48 89 84 24 70 02 00 00	mov    QWORD PTR [rsp+0x270],rax
+   0x00005dc34007c363 <+323>:	48 b8 02 00 00 00 00 00 00 80	movabs rax,0x8000000000000002
+   0x00005dc34007c36d <+333>:	48 89 84 24 b0 02 00 00	mov    QWORD PTR [rsp+0x2b0],rax
+   0x00005dc34007c375 <+341>:	48 8d bc 24 60 02 00 00	lea    rdi,[rsp+0x260]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/convert/mod.rs:
+778	        U::from(self)
+   0x00005dc34007c37d <+349>:	eb 2e              	jmp    0x5dc34007c3ad <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+397>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:
+968	            Err(e) => Err(op(e)),
+   0x00005dc34007c37f <+351>:	48 89 5c 24 50     	mov    QWORD PTR [rsp+0x50],rbx
+   0x00005dc34007c384 <+356>:	48 c7 44 24 58 00 00 00 00	mov    QWORD PTR [rsp+0x58],0x0
+   0x00005dc34007c38d <+365>:	c6 44 24 60 02     	mov    BYTE PTR [rsp+0x60],0x2
+   0x00005dc34007c392 <+370>:	48 b8 02 00 00 00 00 00 00 80	movabs rax,0x8000000000000002
+   0x00005dc34007c39c <+380>:	48 83 c0 0f        	add    rax,0xf
+   0x00005dc34007c3a0 <+384>:	48 89 84 24 a0 00 00 00	mov    QWORD PTR [rsp+0xa0],rax
+   0x00005dc34007c3a8 <+392>:	48 8d 7c 24 50     	lea    rdi,[rsp+0x50]
+   0x00005dc34007c3ad <+397>:	ff 15 9d 0f 52 00  	call   QWORD PTR [rip+0x520f9d]        # 0x5dc34059d350
+   0x00005dc34007c3b3 <+403>:	48 89 c5           	mov    rbp,rax
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+460	    }
+   0x00005dc34007c3b6 <+406>:	48 89 e8           	mov    rax,rbp
+   0x00005dc34007c3b9 <+409>:	48 81 c4 28 04 00 00	add    rsp,0x428
+   0x00005dc34007c3c0 <+416>:	5b                 	pop    rbx
+   0x00005dc34007c3c1 <+417>:	41 5c              	pop    r12
+   0x00005dc34007c3c3 <+419>:	41 5d              	pop    r13
+   0x00005dc34007c3c5 <+421>:	41 5e              	pop    r14
+   0x00005dc34007c3c7 <+423>:	41 5f              	pop    r15
+   0x00005dc34007c3c9 <+425>:	5d                 	pop    rbp
+   0x00005dc34007c3ca <+426>:	c3                 	ret
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cell.rs:
+2447	        &mut self.value
+   0x00005dc34007c3cb <+427>:	49 8d be 78 09 00 00	lea    rdi,[r14+0x978]
+   0x00005dc34007c3d2 <+434>:	48 bb c5 a9 62 2e ea 7a 35 f1	movabs rbx,0xf1357aea2e62a9c5
+   0x00005dc34007c3dc <+444>:	48 89 44 24 10     	mov    QWORD PTR [rsp+0x10],rax
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/uint_macros.rs:
+2456	            intrinsics::wrapping_mul(self, rhs)
+   0x00005dc34007c3e1 <+449>:	48 0f af d8        	imul   rbx,rax
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/intrinsics/mod.rs:
+2022	    unsafe { unchecked_funnel_shl(x, x, shift % (mem::size_of::<T>() as u32 * 8)) }
+   0x00005dc34007c3e5 <+453>:	48 c1 c3 1a        	rol    rbx,0x1a
+   0x00005dc34007c3e9 <+457>:	48 8d 54 24 48     	lea    rdx,[rsp+0x48]
+
+/rust/deps/hashbrown-0.16.1/src/map.rs:
+⚠️ warning: 2049	/rust/deps/hashbrown-0.16.1/src/map.rs: No such file or directory
+   0x00005dc34007c3ee <+462>:	48 89 de           	mov    rsi,rbx
+   0x00005dc34007c3f1 <+465>:	e8 ba cb f5 ff     	call   0x5dc33ffd8fb0 <hashbrown::raw::RawTable<(rustc_middle::mir::interpret::AllocId, alloc::boxed::Box<(rustc_const_eval::interpret::memory::MemoryKind<miri::machine::MiriMemoryKind>, rustc_middle::mir::interpret::allocation::Allocation<miri::machine::Provenance, miri::machine::AllocExtra, miri::alloc::alloc_bytes::MiriAllocBytes>), alloc::alloc::Global>), alloc::alloc::Global>::remove_entry<(rustc_middle::mir::interpret::AllocId, alloc::boxed::Box<(rustc_const_eval::interpret::memory::MemoryKind<miri::machine::MiriMemoryKind>, rustc_middle::mir::interpret::allocation::Allocation<miri::machine::Provenance, miri::machine::AllocExtra, miri::alloc::alloc_bytes::MiriAllocBytes>), alloc::alloc::Global>), alloc::alloc::Global, hashbrown::map::equivalent_key::{closure_env#0}<rustc_middle::mir::interpret::AllocId, rustc_middle::mir::interpret::AllocId, alloc::boxed::Box<(rustc_const_eval::interpret::memory::MemoryKind<miri::machine::MiriMemoryKind>, rustc_middle::mir::interpret::allocation::Allocation<miri::machine::Provenance, miri::machine::AllocExtra, miri::alloc::alloc_bytes::MiriAllocBytes>), alloc::alloc::Global>>>>
+
+2010	in /rust/deps/hashbrown-0.16.1/src/map.rs
+   0x00005dc34007c3f6 <+470>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c3f9 <+473>:	0f 94 c0           	sete   al
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs:
+1164	        match self {
+   0x00005dc34007c3fc <+476>:	48 85 d2           	test   rdx,rdx
+   0x00005dc34007c3ff <+479>:	0f 94 c1           	sete   cl
+   0x00005dc34007c402 <+482>:	08 c1              	or     cl,al
+   0x00005dc34007c404 <+484>:	75 73              	jne    0x5dc34007c479 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+601>
+
+src/data_structures/mono_hash_map.rs:
+75	        self.0.get_mut().remove(k).map(|x| *x)
+   0x00005dc34007c406 <+486>:	48 89 d5           	mov    rbp,rdx
+   0x00005dc34007c409 <+489>:	0f b6 02           	movzx  eax,BYTE PTR [rdx]
+   0x00005dc34007c40c <+492>:	48 89 44 24 28     	mov    QWORD PTR [rsp+0x28],rax
+   0x00005dc34007c411 <+497>:	4c 8b 62 08        	mov    r12,QWORD PTR [rdx+0x8]
+   0x00005dc34007c415 <+501>:	48 89 d6           	mov    rsi,rdx
+   0x00005dc34007c418 <+504>:	48 83 c6 10        	add    rsi,0x10
+   0x00005dc34007c41c <+508>:	48 8d 7c 24 50     	lea    rdi,[rsp+0x50]
+   0x00005dc34007c421 <+513>:	ba e8 00 00 00     	mov    edx,0xe8
+   0x00005dc34007c426 <+518>:	ff 15 6c 05 52 00  	call   QWORD PTR [rip+0x52056c]        # 0x5dc34059c998
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/alloc/layout.rs:
+128	            ) => Layout::is_size_align_valid(size, align)
+   0x00005dc34007c42c <+524>:	bf f8 00 00 00     	mov    edi,0xf8
+   0x00005dc34007c431 <+529>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c436 <+534>:	ff 15 c4 04 52 00  	call   QWORD PTR [rip+0x5204c4]        # 0x5dc34059c900
+   0x00005dc34007c43c <+540>:	84 c0              	test   al,al
+   0x00005dc34007c43e <+542>:	0f 84 60 07 00 00  	je     0x5dc34007cba4 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2436>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:
+115	    unsafe { __rust_dealloc(ptr, layout.size(), layout.align()) }
+   0x00005dc34007c444 <+548>:	be f8 00 00 00     	mov    esi,0xf8
+   0x00005dc34007c449 <+553>:	ba 08 00 00 00     	mov    edx,0x8
+   0x00005dc34007c44e <+558>:	48 89 ef           	mov    rdi,rbp
+   0x00005dc34007c451 <+561>:	ff 15 c9 05 52 00  	call   QWORD PTR [rip+0x5205c9]        # 0x5dc34059ca20
+   0x00005dc34007c457 <+567>:	48 8d bc 24 40 01 00 00	lea    rdi,[rsp+0x140]
+   0x00005dc34007c45f <+575>:	48 8d 74 24 50     	lea    rsi,[rsp+0x50]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs:
+1165	            Some(x) => Some(f(x)),
+   0x00005dc34007c464 <+580>:	ba e8 00 00 00     	mov    edx,0xe8
+   0x00005dc34007c469 <+585>:	ff 15 29 05 52 00  	call   QWORD PTR [rip+0x520529]        # 0x5dc34059c998
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+380	        let Some((alloc_kind, mut alloc)) = self.memory.alloc_map.remove(&alloc_id) else {
+   0x00005dc34007c46f <+591>:	49 83 fc 03        	cmp    r12,0x3
+   0x00005dc34007c473 <+595>:	0f 85 d2 00 00 00  	jne    0x5dc34007c54b <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+811>
+   0x00005dc34007c479 <+601>:	be 78 f3 01 00     	mov    esi,0x1f378
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_middle/src/mir/interpret/mod.rs:
+540	        self.alloc_map.to_alloc.get(&id)
+   0x00005dc34007c47e <+606>:	49 03 b6 a0 09 00 00	add    rsi,QWORD PTR [r14+0x9a0]
+   0x00005dc34007c485 <+613>:	48 8b 44 24 10     	mov    rax,QWORD PTR [rsp+0x10]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+382	            return Err(match self.tcx.try_get_global_alloc(alloc_id) {
+   0x00005dc34007c48a <+618>:	48 89 44 24 50     	mov    QWORD PTR [rsp+0x50],rax
+   0x00005dc34007c48f <+623>:	48 8d bc 24 40 01 00 00	lea    rdi,[rsp+0x140]
+   0x00005dc34007c497 <+631>:	48 8d 54 24 50     	lea    rdx,[rsp+0x50]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_middle/src/mir/interpret/mod.rs:
+540	        self.alloc_map.to_alloc.get(&id)
+   0x00005dc34007c49c <+636>:	e8 7f 7a fb ff     	call   0x5dc340033f20 <rustc_data_structures::sharded::Sharded<hashbrown::table::HashTable<(rustc_middle::mir::interpret::AllocId, rustc_middle::mir::interpret::GlobalAlloc), alloc::alloc::Global>>::get<rustc_middle::mir::interpret::AllocId, rustc_middle::mir::interpret::GlobalAlloc, rustc_middle::mir::interpret::AllocId>>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+382	            return Err(match self.tcx.try_get_global_alloc(alloc_id) {
+   0x00005dc34007c4a1 <+641>:	8b 84 24 40 01 00 00	mov    eax,DWORD PTR [rsp+0x140]
+   0x00005dc34007c4a8 <+648>:	3d 14 ff ff ff     	cmp    eax,0xffffff14
+   0x00005dc34007c4ad <+653>:	75 1a              	jne    0x5dc34007c4c9 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+681>
+   0x00005dc34007c4af <+655>:	49 be 02 00 00 00 00 00 00 80	movabs r14,0x8000000000000002
+   0x00005dc34007c4b9 <+665>:	49 83 ce 0d        	or     r14,0xd
+   0x00005dc34007c4bd <+669>:	31 c0              	xor    eax,eax
+   0x00005dc34007c4bf <+671>:	4c 8b 64 24 10     	mov    r12,QWORD PTR [rsp+0x10]
+   0x00005dc34007c4c4 <+676>:	e9 5d 05 00 00     	jmp    0x5dc34007ca26 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2054>
+   0x00005dc34007c4c9 <+681>:	31 c9              	xor    ecx,ecx
+   0x00005dc34007c4cb <+683>:	2d 0f ff ff ff     	sub    eax,0xffffff0f
+   0x00005dc34007c4d0 <+688>:	0f 42 c1           	cmovb  eax,ecx
+   0x00005dc34007c4d3 <+691>:	48 8d 0d 26 07 a9 ff	lea    rcx,[rip+0xffffffffffa90726]        # 0x5dc33fb0cc00
+   0x00005dc34007c4da <+698>:	48 63 04 81        	movsxd rax,DWORD PTR [rcx+rax*4]
+   0x00005dc34007c4de <+702>:	48 01 c8           	add    rax,rcx
+   0x00005dc34007c4e1 <+705>:	ff e0              	jmp    rax
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/alloc/layout.rs:
+128	            ) => Layout::is_size_align_valid(size, align)
+   0x00005dc34007c4e3 <+707>:	bf 18 00 00 00     	mov    edi,0x18
+   0x00005dc34007c4e8 <+712>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c4ed <+717>:	ff 15 0d 04 52 00  	call   QWORD PTR [rip+0x52040d]        # 0x5dc34059c900
+   0x00005dc34007c4f3 <+723>:	84 c0              	test   al,al
+   0x00005dc34007c4f5 <+725>:	0f 84 8e 06 00 00  	je     0x5dc34007cb89 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2409>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:
+93	        __rust_no_alloc_shim_is_unstable_v2();
+   0x00005dc34007c4fb <+731>:	ff 15 c7 04 52 00  	call   QWORD PTR [rip+0x5204c7]        # 0x5dc34059c9c8
+
+94	
+95	        __rust_alloc(layout.size(), layout.align())
+   0x00005dc34007c501 <+737>:	bf 18 00 00 00     	mov    edi,0x18
+   0x00005dc34007c506 <+742>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c50b <+747>:	ff 15 bf 04 52 00  	call   QWORD PTR [rip+0x5204bf]        # 0x5dc34059c9d0
+
+116	}
+117	
+118	/// Reallocates memory with the global allocator.
+119	///
+120	/// This function forwards calls to the [`GlobalAlloc::realloc`] method
+121	/// of the allocator registered with the `#[global_allocator]` attribute
+122	/// if there is one, or the `std` crate’s default.
+123	///
+124	/// This function is expected to be deprecated in favor of the `grow` and `shrink` methods
+125	/// of the [`Global`] type when it and the [`Allocator`] trait become stable.
+126	///
+127	/// # Safety
+128	///
+129	/// See [`GlobalAlloc::realloc`].
+130	#[stable(feature = "global_alloc", since = "1.28.0")]
+131	#[must_use = "losing the pointer will leak memory"]
+132	#[inline]
+133	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+134	pub unsafe fn realloc(ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+135	    unsafe { __rust_realloc(ptr, layout.size(), layout.align(), new_size) }
+136	}
+137	
+138	/// Allocates zero-initialized memory with the global allocator.
+139	///
+140	/// This function forwards calls to the [`GlobalAlloc::alloc_zeroed`] method
+141	/// of the allocator registered with the `#[global_allocator]` attribute
+142	/// if there is one, or the `std` crate’s default.
+143	///
+144	/// This function is expected to be deprecated in favor of the `allocate_zeroed` method
+145	/// of the [`Global`] type when it and the [`Allocator`] trait become stable.
+146	///
+147	/// # Safety
+148	///
+149	/// See [`GlobalAlloc::alloc_zeroed`].
+150	///
+151	/// # Examples
+152	///
+153	/// ```
+154	/// use std::alloc::{alloc_zeroed, dealloc, handle_alloc_error, Layout};
+155	///
+156	/// unsafe {
+157	///     let layout = Layout::new::<u16>();
+158	///     let ptr = alloc_zeroed(layout);
+159	///     if ptr.is_null() {
+160	///         handle_alloc_error(layout);
+161	///     }
+162	///
+163	///     assert_eq!(*(ptr as *mut u16), 0);
+164	///
+165	///     dealloc(ptr, layout);
+166	/// }
+167	/// ```
+168	#[stable(feature = "global_alloc", since = "1.28.0")]
+169	#[must_use = "losing the pointer will leak memory"]
+170	#[inline]
+171	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+172	pub unsafe fn alloc_zeroed(layout: Layout) -> *mut u8 {
+173	    unsafe {
+174	        // Make sure we don't accidentally allow omitting the allocator shim in
+175	        // stable code until it is actually stabilized.
+176	        __rust_no_alloc_shim_is_unstable_v2();
+177	
+178	        __rust_alloc_zeroed(layout.size(), layout.align())
+179	    }
+180	}
+181	
+182	impl Global {
+183	    #[inline]
+184	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+185	    fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
+186	        match layout.size() {
+187	            0 => Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0)),
+188	            // SAFETY: `layout` is non-zero in size,
+189	            size => unsafe {
+190	                let raw_ptr = if zeroed { alloc_zeroed(layout) } else { alloc(layout) };
+191	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+192	                Ok(NonNull::slice_from_raw_parts(ptr, size))
+193	            },
+194	        }
+195	    }
+196	
+197	    // SAFETY: Same as `Allocator::grow`
+198	    #[inline]
+199	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+200	    unsafe fn grow_impl(
+201	        &self,
+202	        ptr: NonNull<u8>,
+203	        old_layout: Layout,
+204	        new_layout: Layout,
+205	        zeroed: bool,
+206	    ) -> Result<NonNull<[u8]>, AllocError> {
+207	        debug_assert!(
+208	            new_layout.size() >= old_layout.size(),
+209	            "`new_layout.size()` must be greater than or equal to `old_layout.size()`"
+210	        );
+211	
+212	        match old_layout.size() {
+213	            0 => self.alloc_impl(new_layout, zeroed),
+214	
+215	            // SAFETY: `new_size` is non-zero as `old_size` is greater than or equal to `new_size`
+216	            // as required by safety conditions. Other conditions must be upheld by the caller
+217	            old_size if old_layout.align() == new_layout.align() => unsafe {
+218	                let new_size = new_layout.size();
+219	
+220	                // `realloc` probably checks for `new_size >= old_layout.size()` or something similar.
+221	                hint::assert_unchecked(new_size >= old_layout.size());
+222	
+223	                let raw_ptr = realloc(ptr.as_ptr(), old_layout, new_size);
+224	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+225	                if zeroed {
+226	                    raw_ptr.add(old_size).write_bytes(0, new_size - old_size);
+227	                }
+228	                Ok(NonNull::slice_from_raw_parts(ptr, new_size))
+229	            },
+230	
+231	            // SAFETY: because `new_layout.size()` must be greater than or equal to `old_size`,
+232	            // both the old and new memory allocation are valid for reads and writes for `old_size`
+233	            // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
+234	            // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+235	            // for `dealloc` must be upheld by the caller.
+236	            old_size => unsafe {
+237	                let new_ptr = self.alloc_impl(new_layout, zeroed)?;
+238	                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), old_size);
+239	                self.deallocate(ptr, old_layout);
+240	                Ok(new_ptr)
+241	            },
+242	        }
+243	    }
+244	}
+245	
+246	#[unstable(feature = "allocator_api", issue = "32838")]
+247	unsafe impl Allocator for Global {
+248	    #[inline]
+249	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+250	    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+251	        self.alloc_impl(layout, false)
+252	    }
+253	
+254	    #[inline]
+255	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+256	    fn allocate_zeroed(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+257	        self.alloc_impl(layout, true)
+258	    }
+259	
+260	    #[inline]
+261	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+262	    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+263	        if layout.size() != 0 {
+264	            // SAFETY:
+265	            // * We have checked that `layout` is non-zero in size.
+266	            // * The caller is obligated to provide a layout that "fits", and in this case,
+267	            //   "fit" always means a layout that is equal to the original, because our
+268	            //   `allocate()`, `grow()`, and `shrink()` implementations never returns a larger
+269	            //   allocation than requested.
+270	            // * Other conditions must be upheld by the caller, as per `Allocator::deallocate()`'s
+271	            //   safety documentation.
+272	            unsafe { dealloc(ptr.as_ptr(), layout) }
+273	        }
+274	    }
+275	
+276	    #[inline]
+277	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+278	    unsafe fn grow(
+279	        &self,
+280	        ptr: NonNull<u8>,
+281	        old_layout: Layout,
+282	        new_layout: Layout,
+283	    ) -> Result<NonNull<[u8]>, AllocError> {
+284	        // SAFETY: all conditions must be upheld by the caller
+285	        unsafe { self.grow_impl(ptr, old_layout, new_layout, false) }
+286	    }
+287	
+288	    #[inline]
+289	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+290	    unsafe fn grow_zeroed(
+291	        &self,
+292	        ptr: NonNull<u8>,
+293	        old_layout: Layout,
+294	        new_layout: Layout,
+295	    ) -> Result<NonNull<[u8]>, AllocError> {
+296	        // SAFETY: all conditions must be upheld by the caller
+297	        unsafe { self.grow_impl(ptr, old_layout, new_layout, true) }
+298	    }
+299	
+300	    #[inline]
+301	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+302	    unsafe fn shrink(
+303	        &self,
+304	        ptr: NonNull<u8>,
+305	        old_layout: Layout,
+306	        new_layout: Layout,
+307	    ) -> Result<NonNull<[u8]>, AllocError> {
+308	        debug_assert!(
+309	            new_layout.size() <= old_layout.size(),
+310	            "`new_layout.size()` must be smaller than or equal to `old_layout.size()`"
+311	        );
+312	
+313	        match new_layout.size() {
+314	            // SAFETY: conditions must be upheld by the caller
+315	            0 => unsafe {
+316	                self.deallocate(ptr, old_layout);
+317	                Ok(NonNull::slice_from_raw_parts(new_layout.dangling(), 0))
+318	            },
+319	
+320	            // SAFETY: `new_size` is non-zero. Other conditions must be upheld by the caller
+321	            new_size if old_layout.align() == new_layout.align() => unsafe {
+322	                // `realloc` probably checks for `new_size <= old_layout.size()` or something similar.
+323	                hint::assert_unchecked(new_size <= old_layout.size());
+324	
+325	                let raw_ptr = realloc(ptr.as_ptr(), old_layout, new_size);
+326	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+327	                Ok(NonNull::slice_from_raw_parts(ptr, new_size))
+328	            },
+329	
+330	            // SAFETY: because `new_size` must be smaller than or equal to `old_layout.size()`,
+331	            // both the old and new memory allocation are valid for reads and writes for `new_size`
+332	            // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
+333	            // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+334	            // for `dealloc` must be upheld by the caller.
+335	            new_size => unsafe {
+336	                let new_ptr = self.allocate(new_layout)?;
+337	                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), new_size);
+338	                self.deallocate(ptr, old_layout);
+339	                Ok(new_ptr)
+340	            },
+341	        }
+342	    }
+343	}
+344	
+345	/// The allocator for `Box`.
+346	#[cfg(not(no_global_oom_handling))]
+347	#[lang = "exchange_malloc"]
+348	#[inline]
+349	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+350	unsafe fn exchange_malloc(size: usize, align: usize) -> *mut u8 {
+351	    let layout = unsafe { Layout::from_size_align_unchecked(size, align) };
+352	    match Global.allocate(layout) {
+   0x00005dc34007c511 <+753>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c514 <+756>:	0f 84 9a 06 00 00  	je     0x5dc34007cbb4 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2452>
+   0x00005dc34007c51a <+762>:	49 be 02 00 00 00 00 00 00 80	movabs r14,0x8000000000000002
+   0x00005dc34007c524 <+772>:	48 8b 4c 24 10     	mov    rcx,QWORD PTR [rsp+0x10]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:
+265	        return box_new(x);
+   0x00005dc34007c529 <+777>:	48 89 08           	mov    QWORD PTR [rax],rcx
+   0x00005dc34007c52c <+780>:	48 8d 0d 3f 2e a9 ff	lea    rcx,[rip+0xffffffffffa92e3f]        # 0x5dc33fb0f372
+   0x00005dc34007c533 <+787>:	48 89 48 08        	mov    QWORD PTR [rax+0x8],rcx
+   0x00005dc34007c537 <+791>:	48 c7 40 10 0a 00 00 00	mov    QWORD PTR [rax+0x10],0xa
+   0x00005dc34007c53f <+799>:	⚠️ warning: (Internal error: pc 0x5dc340355d08 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355d08 in address map, but not in symtab.)
+48 8d 0d c2 97 2d 00	lea    rcx,[rip+0x2d97c2]        # 0x5dc340355d08
+   0x00005dc34007c546 <+806>:	e9 d4 04 00 00     	jmp    0x5dc34007ca1f <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2047>
+   0x00005dc34007c54b <+811>:	4c 89 e0           	mov    rax,r12
+   0x00005dc34007c54e <+814>:	4c 8b 64 24 28     	mov    r12,QWORD PTR [rsp+0x28]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+380	        let Some((alloc_kind, mut alloc)) = self.memory.alloc_map.remove(&alloc_id) else {
+   0x00005dc34007c553 <+819>:	44 88 64 24 1f     	mov    BYTE PTR [rsp+0x1f],r12b
+   0x00005dc34007c558 <+824>:	48 89 44 24 50     	mov    QWORD PTR [rsp+0x50],rax
+   0x00005dc34007c55d <+829>:	48 8d 7c 24 58     	lea    rdi,[rsp+0x58]
+   0x00005dc34007c562 <+834>:	48 8d b4 24 40 01 00 00	lea    rsi,[rsp+0x140]
+   0x00005dc34007c56a <+842>:	ba e8 00 00 00     	mov    edx,0xe8
+   0x00005dc34007c56f <+847>:	ff 15 23 04 52 00  	call   QWORD PTR [rip+0x520423]        # 0x5dc34059c998
+
+383	                Some(GlobalAlloc::Function { .. }) => {
+384	                    err_ub_custom!(
+385	                        fluent::const_eval_invalid_dealloc,
+386	                        alloc_id = alloc_id,
+387	                        kind = "fn",
+388	                    )
+389	                }
+390	                Some(GlobalAlloc::VTable(..)) => {
+391	                    err_ub_custom!(
+392	                        fluent::const_eval_invalid_dealloc,
+393	                        alloc_id = alloc_id,
+394	                        kind = "vtable",
+395	                    )
+396	                }
+397	                Some(GlobalAlloc::TypeId { .. }) => {
+398	                    err_ub_custom!(
+399	                        fluent::const_eval_invalid_dealloc,
+400	                        alloc_id = alloc_id,
+401	                        kind = "typeid",
+402	                    )
+403	                }
+404	                Some(GlobalAlloc::Static(..) | GlobalAlloc::Memory(..)) => {
+405	                    err_ub_custom!(
+406	                        fluent::const_eval_invalid_dealloc,
+407	                        alloc_id = alloc_id,
+408	                        kind = "static_mem"
+409	                    )
+410	                }
+411	                None => err_ub!(PointerUseAfterFree(alloc_id, CheckInAllocMsg::MemoryAccess)),
+412	            })
+413	            .into();
+414	        };
+415	
+416	        if alloc.mutability.is_not() {
+   0x00005dc34007c575 <+853>:	80 bc 24 38 01 00 00 00	cmp    BYTE PTR [rsp+0x138],0x0
+   0x00005dc34007c57d <+861>:	0f 84 5c 03 00 00  	je     0x5dc34007c8df <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1727>
+
+32	#[derive(Debug, PartialEq, Copy, Clone)]
+   0x00005dc34007c583 <+867>:	41 8d 44 24 f4     	lea    eax,[r12-0xc]
+   0x00005dc34007c588 <+872>:	41 80 fc 0c        	cmp    r12b,0xc
+   0x00005dc34007c58c <+876>:	0f b6 c0           	movzx  eax,al
+   0x00005dc34007c58f <+879>:	b9 02 00 00 00     	mov    ecx,0x2
+   0x00005dc34007c594 <+884>:	0f 42 c1           	cmovb  eax,ecx
+   0x00005dc34007c597 <+887>:	41 8d 57 f4        	lea    edx,[r15-0xc]
+   0x00005dc34007c59b <+891>:	41 80 ff 0c        	cmp    r15b,0xc
+   0x00005dc34007c59f <+895>:	0f b6 d2           	movzx  edx,dl
+   0x00005dc34007c5a2 <+898>:	0f 42 d1           	cmovb  edx,ecx
+   0x00005dc34007c5a5 <+901>:	38 d0              	cmp    al,dl
+   0x00005dc34007c5a7 <+903>:	0f 85 e9 01 00 00  	jne    0x5dc34007c796 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1398>
+   0x00005dc34007c5ad <+909>:	3c 02              	cmp    al,0x2
+   0x00005dc34007c5af <+911>:	0f 95 c0           	setne  al
+   0x00005dc34007c5b2 <+914>:	45 38 fc           	cmp    r12b,r15b
+   0x00005dc34007c5b5 <+917>:	0f 94 c1           	sete   cl
+   0x00005dc34007c5b8 <+920>:	08 c1              	or     cl,al
+   0x00005dc34007c5ba <+922>:	80 f9 01           	cmp    cl,0x1
+   0x00005dc34007c5bd <+925>:	0f 85 d3 01 00 00  	jne    0x5dc34007c796 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1398>
+   0x00005dc34007c5c3 <+931>:	48 8b 44 24 20     	mov    rax,QWORD PTR [rsp+0x20]
+
+425	            );
+426	        }
+427	        if let Some((size, align)) = old_size_and_align {
+   0x00005dc34007c5c8 <+936>:	80 38 00           	cmp    BYTE PTR [rax],0x0
+   0x00005dc34007c5cb <+939>:	74 2d              	je     0x5dc34007c5fa <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+986>
+   0x00005dc34007c5cd <+941>:	4c 8b 60 08        	mov    r12,QWORD PTR [rax+0x8]
+   0x00005dc34007c5d1 <+945>:	0f b6 68 10        	movzx  ebp,BYTE PTR [rax+0x10]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_middle/src/mir/interpret/allocation.rs:
+545	        self.bytes.len()
+   0x00005dc34007c5d5 <+949>:	48 8d bc 24 d8 00 00 00	lea    rdi,[rsp+0xd8]
+   0x00005dc34007c5dd <+957>:	ff 15 65 1b 52 00  	call   QWORD PTR [rip+0x521b65]        # 0x5dc34059e148
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_abi/src/lib.rs:
+732	#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+   0x00005dc34007c5e3 <+963>:	49 39 d4           	cmp    r12,rdx
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+428	            if size != alloc.size() || align != alloc.align {
+   0x00005dc34007c5e6 <+966>:	0f 85 56 04 00 00  	jne    0x5dc34007ca42 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2082>
+   0x00005dc34007c5ec <+972>:	40 3a ac 24 39 01 00 00	cmp    bpl,BYTE PTR [rsp+0x139]
+   0x00005dc34007c5f4 <+980>:	0f 85 48 04 00 00  	jne    0x5dc34007ca42 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2082>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_middle/src/mir/interpret/allocation.rs:
+545	        self.bytes.len()
+   0x00005dc34007c5fa <+986>:	48 8d bc 24 d8 00 00 00	lea    rdi,[rsp+0xd8]
+   0x00005dc34007c602 <+994>:	ff 15 40 1b 52 00  	call   QWORD PTR [rip+0x521b40]        # 0x5dc34059e148
+   0x00005dc34007c608 <+1000>:	48 89 54 24 20     	mov    QWORD PTR [rsp+0x20],rdx
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+449	            alloc.align,
+   0x00005dc34007c60d <+1005>:	0f b6 84 24 39 01 00 00	movzx  eax,BYTE PTR [rsp+0x139]
+   0x00005dc34007c615 <+1013>:	88 44 24 28        	mov    BYTE PTR [rsp+0x28],al
+   0x00005dc34007c619 <+1017>:	48 8b 44 24 10     	mov    rax,QWORD PTR [rsp+0x10]
+
+src/machine.rs:
+1723	        (alloc_id, prove_extra): (AllocId, Self::ProvenanceExtra),
+   0x00005dc34007c61e <+1022>:	48 89 44 24 30     	mov    QWORD PTR [rsp+0x30],rax
+
+1724	        size: Size,
+1725	        align: Align,
+1726	        kind: MemoryKind,
+1727	    ) -> InterpResult<'tcx> {
+1728	        if machine.tracked_alloc_ids.contains(&alloc_id) {
+   0x00005dc34007c623 <+1027>:	49 8d be c0 02 00 00	lea    rdi,[r14+0x2c0]
+   0x00005dc34007c62a <+1034>:	48 8d 74 24 30     	lea    rsi,[rsp+0x30]
+
+/rust/deps/hashbrown-0.16.1/src/set.rs:
+⚠️ warning: 866	/rust/deps/hashbrown-0.16.1/src/set.rs: No such file or directory
+   0x00005dc34007c62f <+1039>:	e8 6c f5 15 00     	call   0x5dc3401dbba0 <hashbrown::map::HashMap<rustc_middle::mir::interpret::AllocId, (), rustc_hash::FxBuildHasher, alloc::alloc::Global>::contains_key<rustc_middle::mir::interpret::AllocId, (), rustc_hash::FxBuildHasher, alloc::alloc::Global, rustc_middle::mir::interpret::AllocId>>
+
+src/machine.rs:
+1728	        if machine.tracked_alloc_ids.contains(&alloc_id) {
+   0x00005dc34007c634 <+1044>:	84 c0              	test   al,al
+   0x00005dc34007c636 <+1046>:	74 33              	je     0x5dc34007c66b <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1099>
+   0x00005dc34007c638 <+1048>:	48 8b 44 24 10     	mov    rax,QWORD PTR [rsp+0x10]
+
+1729	            machine.emit_diagnostic(NonHaltingDiagnostic::FreedAlloc(alloc_id));
+   0x00005dc34007c63d <+1053>:	48 89 84 24 48 01 00 00	mov    QWORD PTR [rsp+0x148],rax
+   0x00005dc34007c645 <+1061>:	48 b8 02 00 00 00 00 00 00 80	movabs rax,0x8000000000000002
+   0x00005dc34007c64f <+1071>:	48 ff c0           	inc    rax
+   0x00005dc34007c652 <+1074>:	48 89 84 24 40 01 00 00	mov    QWORD PTR [rsp+0x140],rax
+   0x00005dc34007c65a <+1082>:	48 8d b4 24 40 01 00 00	lea    rsi,[rsp+0x140]
+   0x00005dc34007c662 <+1090>:	4c 89 f7           	mov    rdi,r14
+   0x00005dc34007c665 <+1093>:	ff 15 b5 07 52 00  	call   QWORD PTR [rip+0x5207b5]        # 0x5dc34059ce20
+
+1730	        }
+1731	        match &machine.data_race {
+   0x00005dc34007c66b <+1099>:	49 8b 86 b0 00 00 00	mov    rax,QWORD PTR [r14+0xb0]
+   0x00005dc34007c672 <+1106>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c675 <+1109>:	48 8b 74 24 10     	mov    rsi,QWORD PTR [rsp+0x10]
+   0x00005dc34007c67a <+1114>:	74 47              	je     0x5dc34007c6c3 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1187>
+   0x00005dc34007c67c <+1116>:	83 f8 02           	cmp    eax,0x2
+   0x00005dc34007c67f <+1119>:	0f 85 9c 05 00 00  	jne    0x5dc34007cc21 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2561>
+
+src/concurrency/data_race_handler.rs:
+58	        if let Self::Vclocks(data_race, _weak_memory) = self { Some(data_race) } else { None }
+   0x00005dc34007c685 <+1125>:	83 7c 24 60 02     	cmp    DWORD PTR [rsp+0x60],0x2
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs:
+1014	        match self {
+   0x00005dc34007c68a <+1130>:	0f 83 58 05 00 00  	jae    0x5dc34007cbe8 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2504>
+
+src/concurrency/data_race_handler.rs:
+58	        if let Self::Vclocks(data_race, _weak_memory) = self { Some(data_race) } else { None }
+   0x00005dc34007c690 <+1136>:	48 8d bc 24 88 00 00 00	lea    rdi,[rsp+0x88]
+
+src/machine.rs:
+1738	                data_race.write_non_atomic(
+   0x00005dc34007c698 <+1144>:	4c 89 34 24        	mov    QWORD PTR [rsp],r14
+   0x00005dc34007c69c <+1148>:	31 d2              	xor    edx,edx
+   0x00005dc34007c69e <+1150>:	48 8b 4c 24 20     	mov    rcx,QWORD PTR [rsp+0x20]
+   0x00005dc34007c6a3 <+1155>:	41 b8 03 00 00 00  	mov    r8d,0x3
+   0x00005dc34007c6a9 <+1161>:	45 31 c9           	xor    r9d,r9d
+   0x00005dc34007c6ac <+1164>:	ff 15 86 16 52 00  	call   QWORD PTR [rip+0x521686]        # 0x5dc34059dd38
+   0x00005dc34007c6b2 <+1170>:	48 89 c5           	mov    rbp,rax
+   0x00005dc34007c6b5 <+1173>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c6b8 <+1176>:	48 8b 74 24 10     	mov    rsi,QWORD PTR [rsp+0x10]
+   0x00005dc34007c6bd <+1181>:	0f 85 98 02 00 00  	jne    0x5dc34007c95b <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1851>
+
+1739	                    alloc_id,
+1740	                    alloc_range(Size::ZERO, size),
+1741	                    NaWriteType::Deallocate,
+1742	                    None,
+1743	                    machine,
+1744	                )?;
+1745	            }
+1746	        }
+1747	        if let Some(borrow_tracker) = &mut alloc_extra.borrow_tracker {
+   0x00005dc34007c6c3 <+1187>:	83 7c 24 50 02     	cmp    DWORD PTR [rsp+0x50],0x2
+   0x00005dc34007c6c8 <+1192>:	74 22              	je     0x5dc34007c6ec <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1228>
+   0x00005dc34007c6ca <+1194>:	48 8d 7c 24 50     	lea    rdi,[rsp+0x50]
+
+1748	            borrow_tracker.before_memory_deallocation(alloc_id, prove_extra, size, machine)?;
+   0x00005dc34007c6cf <+1199>:	4c 89 ea           	mov    rdx,r13
+   0x00005dc34007c6d2 <+1202>:	48 8b 4c 24 20     	mov    rcx,QWORD PTR [rsp+0x20]
+   0x00005dc34007c6d7 <+1207>:	4d 89 f0           	mov    r8,r14
+   0x00005dc34007c6da <+1210>:	ff 15 60 0a 52 00  	call   QWORD PTR [rip+0x520a60]        # 0x5dc34059d140
+   0x00005dc34007c6e0 <+1216>:	48 89 c5           	mov    rbp,rax
+   0x00005dc34007c6e3 <+1219>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c6e6 <+1222>:	0f 85 6f 02 00 00  	jne    0x5dc34007c95b <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1851>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/collections/btree/map.rs:
+2543	        if let Some(root) = &self.root {
+   0x00005dc34007c6ec <+1228>:	48 8b 84 24 c0 00 00 00	mov    rax,QWORD PTR [rsp+0xc0]
+   0x00005dc34007c6f4 <+1236>:	48 8b 8c 24 c8 00 00 00	mov    rcx,QWORD PTR [rsp+0xc8]
+   0x00005dc34007c6fc <+1244>:	31 d2              	xor    edx,edx
+   0x00005dc34007c6fe <+1246>:	48 89 c6           	mov    rsi,rax
+   0x00005dc34007c701 <+1249>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c704 <+1252>:	0f 95 c2           	setne  dl
+   0x00005dc34007c707 <+1255>:	74 08              	je     0x5dc34007c711 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1265>
+   0x00005dc34007c709 <+1257>:	48 8b b4 24 d0 00 00 00	mov    rsi,QWORD PTR [rsp+0xd0]
+
+src/machine.rs:
+1751	        for obj in alloc_extra.sync_objs.values() {
+   0x00005dc34007c711 <+1265>:	48 89 94 24 40 01 00 00	mov    QWORD PTR [rsp+0x140],rdx
+   0x00005dc34007c719 <+1273>:	48 c7 84 24 48 01 00 00 00 00 00 00	mov    QWORD PTR [rsp+0x148],0x0
+   0x00005dc34007c725 <+1285>:	48 89 84 24 50 01 00 00	mov    QWORD PTR [rsp+0x150],rax
+   0x00005dc34007c72d <+1293>:	48 89 8c 24 58 01 00 00	mov    QWORD PTR [rsp+0x158],rcx
+   0x00005dc34007c735 <+1301>:	48 89 94 24 60 01 00 00	mov    QWORD PTR [rsp+0x160],rdx
+   0x00005dc34007c73d <+1309>:	48 c7 84 24 68 01 00 00 00 00 00 00	mov    QWORD PTR [rsp+0x168],0x0
+   0x00005dc34007c749 <+1321>:	48 89 84 24 70 01 00 00	mov    QWORD PTR [rsp+0x170],rax
+   0x00005dc34007c751 <+1329>:	48 89 8c 24 78 01 00 00	mov    QWORD PTR [rsp+0x178],rcx
+   0x00005dc34007c759 <+1337>:	48 89 b4 24 80 01 00 00	mov    QWORD PTR [rsp+0x180],rsi
+   0x00005dc34007c761 <+1345>:	4c 8d ac 24 40 01 00 00	lea    r13,[rsp+0x140]
+   0x00005dc34007c769 <+1353>:	4c 89 ef           	mov    rdi,r13
+   0x00005dc34007c76c <+1356>:	e8 af 51 f8 ff     	call   0x5dc340001920 <alloc::collections::btree::map::{impl#50}::next<rustc_abi::Size, alloc::boxed::Box<dyn miri::concurrency::sync::SyncObj, alloc::alloc::Global>>>
+   0x00005dc34007c771 <+1361>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c774 <+1364>:	0f 84 43 03 00 00  	je     0x5dc34007cabd <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2205>
+
+1752	            obj.on_access(concurrency::sync::AccessKind::Dealloc)?;
+   0x00005dc34007c77a <+1370>:	48 8b 38           	mov    rdi,QWORD PTR [rax]
+   0x00005dc34007c77d <+1373>:	48 8b 40 08        	mov    rax,QWORD PTR [rax+0x8]
+   0x00005dc34007c781 <+1377>:	be 02 00 00 00     	mov    esi,0x2
+   0x00005dc34007c786 <+1382>:	ff 50 20           	call   QWORD PTR [rax+0x20]
+   0x00005dc34007c789 <+1385>:	48 89 c5           	mov    rbp,rax
+   0x00005dc34007c78c <+1388>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c78f <+1391>:	74 d8              	je     0x5dc34007c769 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1353>
+   0x00005dc34007c791 <+1393>:	e9 c5 01 00 00     	jmp    0x5dc34007c95b <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1851>
+   0x00005dc34007c796 <+1398>:	48 8d 44 24 1f     	lea    rax,[rsp+0x1f]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+423	                alloc_kind = format!("{alloc_kind}"),
+   0x00005dc34007c79b <+1403>:	48 89 44 24 30     	mov    QWORD PTR [rsp+0x30],rax
+   0x00005dc34007c7a0 <+1408>:	48 8d 1d 19 4c f7 ff	lea    rbx,[rip+0xfffffffffff74c19]        # 0x5dc33fff13c0 <rustc_const_eval::interpret::memory::{impl#1}::fmt<miri::machine::MiriMemoryKind>>
+   0x00005dc34007c7a7 <+1415>:	48 89 5c 24 38     	mov    QWORD PTR [rsp+0x38],rbx
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/fmt.rs:
+654	    args.as_str().map_or_else(|| format_inner(args), crate::borrow::ToOwned::to_owned)
+   0x00005dc34007c7ac <+1420>:	48 8d 35 7d 27 a6 ff	lea    rsi,[rip+0xffffffffffa6277d]        # 0x5dc33fadef30 <anon.df358621639d0a97e4028eced345d673.192.llvm>
+   0x00005dc34007c7b3 <+1427>:	48 8d bc 24 40 01 00 00	lea    rdi,[rsp+0x140]
+   0x00005dc34007c7bb <+1435>:	48 8d 54 24 30     	lea    rdx,[rsp+0x30]
+   0x00005dc34007c7c0 <+1440>:	ff 15 ca 01 52 00  	call   QWORD PTR [rip+0x5201ca]        # 0x5dc34059c990
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/hint.rs:
+596	    value
+   0x00005dc34007c7c6 <+1446>:	0f 10 84 24 40 01 00 00	movups xmm0,XMMWORD PTR [rsp+0x140]
+   0x00005dc34007c7ce <+1454>:	0f 29 44 24 30     	movaps XMMWORD PTR [rsp+0x30],xmm0
+   0x00005dc34007c7d3 <+1459>:	48 8b 84 24 50 01 00 00	mov    rax,QWORD PTR [rsp+0x150]
+   0x00005dc34007c7db <+1467>:	48 89 44 24 40     	mov    QWORD PTR [rsp+0x40],rax
+   0x00005dc34007c7e0 <+1472>:	48 8d 44 24 1e     	lea    rax,[rsp+0x1e]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+424	                kind = format!("{kind}"),
+   0x00005dc34007c7e5 <+1477>:	48 89 84 24 40 01 00 00	mov    QWORD PTR [rsp+0x140],rax
+   0x00005dc34007c7ed <+1485>:	48 89 9c 24 48 01 00 00	mov    QWORD PTR [rsp+0x148],rbx
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/fmt.rs:
+654	    args.as_str().map_or_else(|| format_inner(args), crate::borrow::ToOwned::to_owned)
+   0x00005dc34007c7f5 <+1493>:	48 8d 35 34 27 a6 ff	lea    rsi,[rip+0xffffffffffa62734]        # 0x5dc33fadef30 <anon.df358621639d0a97e4028eced345d673.192.llvm>
+   0x00005dc34007c7fc <+1500>:	48 8d bc 24 48 02 00 00	lea    rdi,[rsp+0x248]
+   0x00005dc34007c804 <+1508>:	48 8d 94 24 40 01 00 00	lea    rdx,[rsp+0x140]
+   0x00005dc34007c80c <+1516>:	ff 15 7e 01 52 00  	call   QWORD PTR [rip+0x52017e]        # 0x5dc34059c990
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+420	            throw_ub_custom!(
+   0x00005dc34007c812 <+1522>:	48 8b 44 24 40     	mov    rax,QWORD PTR [rsp+0x40]
+   0x00005dc34007c817 <+1527>:	48 89 84 24 50 01 00 00	mov    QWORD PTR [rsp+0x150],rax
+   0x00005dc34007c81f <+1535>:	0f 28 44 24 30     	movaps xmm0,XMMWORD PTR [rsp+0x30]
+   0x00005dc34007c824 <+1540>:	0f 29 84 24 40 01 00 00	movaps XMMWORD PTR [rsp+0x140],xmm0
+   0x00005dc34007c82c <+1548>:	48 8b 44 24 10     	mov    rax,QWORD PTR [rsp+0x10]
+   0x00005dc34007c831 <+1553>:	48 89 84 24 70 01 00 00	mov    QWORD PTR [rsp+0x170],rax
+   0x00005dc34007c839 <+1561>:	0f 10 84 24 48 02 00 00	movups xmm0,XMMWORD PTR [rsp+0x248]
+   0x00005dc34007c841 <+1569>:	0f 11 84 24 58 01 00 00	movups XMMWORD PTR [rsp+0x158],xmm0
+   0x00005dc34007c849 <+1577>:	48 8b 84 24 58 02 00 00	mov    rax,QWORD PTR [rsp+0x258]
+   0x00005dc34007c851 <+1585>:	48 89 84 24 68 01 00 00	mov    QWORD PTR [rsp+0x168],rax
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/alloc/layout.rs:
+128	            ) => Layout::is_size_align_valid(size, align)
+   0x00005dc34007c859 <+1593>:	bf 38 00 00 00     	mov    edi,0x38
+   0x00005dc34007c85e <+1598>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c863 <+1603>:	ff 15 97 00 52 00  	call   QWORD PTR [rip+0x520097]        # 0x5dc34059c900
+   0x00005dc34007c869 <+1609>:	84 c0              	test   al,al
+   0x00005dc34007c86b <+1611>:	0f 84 18 03 00 00  	je     0x5dc34007cb89 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2409>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:
+93	        __rust_no_alloc_shim_is_unstable_v2();
+   0x00005dc34007c871 <+1617>:	ff 15 51 01 52 00  	call   QWORD PTR [rip+0x520151]        # 0x5dc34059c9c8
+
+94	
+95	        __rust_alloc(layout.size(), layout.align())
+   0x00005dc34007c877 <+1623>:	bf 38 00 00 00     	mov    edi,0x38
+   0x00005dc34007c87c <+1628>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c881 <+1633>:	ff 15 49 01 52 00  	call   QWORD PTR [rip+0x520149]        # 0x5dc34059c9d0
+
+116	}
+117	
+118	/// Reallocates memory with the global allocator.
+119	///
+120	/// This function forwards calls to the [`GlobalAlloc::realloc`] method
+121	/// of the allocator registered with the `#[global_allocator]` attribute
+122	/// if there is one, or the `std` crate’s default.
+123	///
+124	/// This function is expected to be deprecated in favor of the `grow` and `shrink` methods
+125	/// of the [`Global`] type when it and the [`Allocator`] trait become stable.
+126	///
+127	/// # Safety
+128	///
+129	/// See [`GlobalAlloc::realloc`].
+130	#[stable(feature = "global_alloc", since = "1.28.0")]
+131	#[must_use = "losing the pointer will leak memory"]
+132	#[inline]
+133	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+134	pub unsafe fn realloc(ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+135	    unsafe { __rust_realloc(ptr, layout.size(), layout.align(), new_size) }
+136	}
+137	
+138	/// Allocates zero-initialized memory with the global allocator.
+139	///
+140	/// This function forwards calls to the [`GlobalAlloc::alloc_zeroed`] method
+141	/// of the allocator registered with the `#[global_allocator]` attribute
+142	/// if there is one, or the `std` crate’s default.
+143	///
+144	/// This function is expected to be deprecated in favor of the `allocate_zeroed` method
+145	/// of the [`Global`] type when it and the [`Allocator`] trait become stable.
+146	///
+147	/// # Safety
+148	///
+149	/// See [`GlobalAlloc::alloc_zeroed`].
+150	///
+151	/// # Examples
+152	///
+153	/// ```
+154	/// use std::alloc::{alloc_zeroed, dealloc, handle_alloc_error, Layout};
+155	///
+156	/// unsafe {
+157	///     let layout = Layout::new::<u16>();
+158	///     let ptr = alloc_zeroed(layout);
+159	///     if ptr.is_null() {
+160	///         handle_alloc_error(layout);
+161	///     }
+162	///
+163	///     assert_eq!(*(ptr as *mut u16), 0);
+164	///
+165	///     dealloc(ptr, layout);
+166	/// }
+167	/// ```
+168	#[stable(feature = "global_alloc", since = "1.28.0")]
+169	#[must_use = "losing the pointer will leak memory"]
+170	#[inline]
+171	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+172	pub unsafe fn alloc_zeroed(layout: Layout) -> *mut u8 {
+173	    unsafe {
+174	        // Make sure we don't accidentally allow omitting the allocator shim in
+175	        // stable code until it is actually stabilized.
+176	        __rust_no_alloc_shim_is_unstable_v2();
+177	
+178	        __rust_alloc_zeroed(layout.size(), layout.align())
+179	    }
+180	}
+181	
+182	impl Global {
+183	    #[inline]
+184	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+185	    fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
+186	        match layout.size() {
+187	            0 => Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0)),
+188	            // SAFETY: `layout` is non-zero in size,
+189	            size => unsafe {
+190	                let raw_ptr = if zeroed { alloc_zeroed(layout) } else { alloc(layout) };
+191	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+192	                Ok(NonNull::slice_from_raw_parts(ptr, size))
+193	            },
+194	        }
+195	    }
+196	
+197	    // SAFETY: Same as `Allocator::grow`
+198	    #[inline]
+199	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+200	    unsafe fn grow_impl(
+201	        &self,
+202	        ptr: NonNull<u8>,
+203	        old_layout: Layout,
+204	        new_layout: Layout,
+205	        zeroed: bool,
+206	    ) -> Result<NonNull<[u8]>, AllocError> {
+207	        debug_assert!(
+208	            new_layout.size() >= old_layout.size(),
+209	            "`new_layout.size()` must be greater than or equal to `old_layout.size()`"
+210	        );
+211	
+212	        match old_layout.size() {
+213	            0 => self.alloc_impl(new_layout, zeroed),
+214	
+215	            // SAFETY: `new_size` is non-zero as `old_size` is greater than or equal to `new_size`
+216	            // as required by safety conditions. Other conditions must be upheld by the caller
+217	            old_size if old_layout.align() == new_layout.align() => unsafe {
+218	                let new_size = new_layout.size();
+219	
+220	                // `realloc` probably checks for `new_size >= old_layout.size()` or something similar.
+221	                hint::assert_unchecked(new_size >= old_layout.size());
+222	
+223	                let raw_ptr = realloc(ptr.as_ptr(), old_layout, new_size);
+224	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+225	                if zeroed {
+226	                    raw_ptr.add(old_size).write_bytes(0, new_size - old_size);
+227	                }
+228	                Ok(NonNull::slice_from_raw_parts(ptr, new_size))
+229	            },
+230	
+231	            // SAFETY: because `new_layout.size()` must be greater than or equal to `old_size`,
+232	            // both the old and new memory allocation are valid for reads and writes for `old_size`
+233	            // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
+234	            // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+235	            // for `dealloc` must be upheld by the caller.
+236	            old_size => unsafe {
+237	                let new_ptr = self.alloc_impl(new_layout, zeroed)?;
+238	                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), old_size);
+239	                self.deallocate(ptr, old_layout);
+240	                Ok(new_ptr)
+241	            },
+242	        }
+243	    }
+244	}
+245	
+246	#[unstable(feature = "allocator_api", issue = "32838")]
+247	unsafe impl Allocator for Global {
+248	    #[inline]
+249	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+250	    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+251	        self.alloc_impl(layout, false)
+252	    }
+253	
+254	    #[inline]
+255	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+256	    fn allocate_zeroed(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+257	        self.alloc_impl(layout, true)
+258	    }
+259	
+260	    #[inline]
+261	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+262	    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+263	        if layout.size() != 0 {
+264	            // SAFETY:
+265	            // * We have checked that `layout` is non-zero in size.
+266	            // * The caller is obligated to provide a layout that "fits", and in this case,
+267	            //   "fit" always means a layout that is equal to the original, because our
+268	            //   `allocate()`, `grow()`, and `shrink()` implementations never returns a larger
+269	            //   allocation than requested.
+270	            // * Other conditions must be upheld by the caller, as per `Allocator::deallocate()`'s
+271	            //   safety documentation.
+272	            unsafe { dealloc(ptr.as_ptr(), layout) }
+273	        }
+274	    }
+275	
+276	    #[inline]
+277	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+278	    unsafe fn grow(
+279	        &self,
+280	        ptr: NonNull<u8>,
+281	        old_layout: Layout,
+282	        new_layout: Layout,
+283	    ) -> Result<NonNull<[u8]>, AllocError> {
+284	        // SAFETY: all conditions must be upheld by the caller
+285	        unsafe { self.grow_impl(ptr, old_layout, new_layout, false) }
+286	    }
+287	
+288	    #[inline]
+289	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+290	    unsafe fn grow_zeroed(
+291	        &self,
+292	        ptr: NonNull<u8>,
+293	        old_layout: Layout,
+294	        new_layout: Layout,
+295	    ) -> Result<NonNull<[u8]>, AllocError> {
+296	        // SAFETY: all conditions must be upheld by the caller
+297	        unsafe { self.grow_impl(ptr, old_layout, new_layout, true) }
+298	    }
+299	
+300	    #[inline]
+301	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+302	    unsafe fn shrink(
+303	        &self,
+304	        ptr: NonNull<u8>,
+305	        old_layout: Layout,
+306	        new_layout: Layout,
+307	    ) -> Result<NonNull<[u8]>, AllocError> {
+308	        debug_assert!(
+309	            new_layout.size() <= old_layout.size(),
+310	            "`new_layout.size()` must be smaller than or equal to `old_layout.size()`"
+311	        );
+312	
+313	        match new_layout.size() {
+314	            // SAFETY: conditions must be upheld by the caller
+315	            0 => unsafe {
+316	                self.deallocate(ptr, old_layout);
+317	                Ok(NonNull::slice_from_raw_parts(new_layout.dangling(), 0))
+318	            },
+319	
+320	            // SAFETY: `new_size` is non-zero. Other conditions must be upheld by the caller
+321	            new_size if old_layout.align() == new_layout.align() => unsafe {
+322	                // `realloc` probably checks for `new_size <= old_layout.size()` or something similar.
+323	                hint::assert_unchecked(new_size <= old_layout.size());
+324	
+325	                let raw_ptr = realloc(ptr.as_ptr(), old_layout, new_size);
+326	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+327	                Ok(NonNull::slice_from_raw_parts(ptr, new_size))
+328	            },
+329	
+330	            // SAFETY: because `new_size` must be smaller than or equal to `old_layout.size()`,
+331	            // both the old and new memory allocation are valid for reads and writes for `new_size`
+332	            // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
+333	            // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+334	            // for `dealloc` must be upheld by the caller.
+335	            new_size => unsafe {
+336	                let new_ptr = self.allocate(new_layout)?;
+337	                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), new_size);
+338	                self.deallocate(ptr, old_layout);
+339	                Ok(new_ptr)
+340	            },
+341	        }
+342	    }
+343	}
+344	
+345	/// The allocator for `Box`.
+346	#[cfg(not(no_global_oom_handling))]
+347	#[lang = "exchange_malloc"]
+348	#[inline]
+349	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+350	unsafe fn exchange_malloc(size: usize, align: usize) -> *mut u8 {
+351	    let layout = unsafe { Layout::from_size_align_unchecked(size, align) };
+352	    match Global.allocate(layout) {
+   0x00005dc34007c887 <+1639>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c88a <+1642>:	0f 84 34 03 00 00  	je     0x5dc34007cbc4 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2468>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:
+265	        return box_new(x);
+   0x00005dc34007c890 <+1648>:	48 8b 8c 24 70 01 00 00	mov    rcx,QWORD PTR [rsp+0x170]
+   0x00005dc34007c898 <+1656>:	48 89 48 30        	mov    QWORD PTR [rax+0x30],rcx
+   0x00005dc34007c89c <+1660>:	0f 28 84 24 40 01 00 00	movaps xmm0,XMMWORD PTR [rsp+0x140]
+   0x00005dc34007c8a4 <+1668>:	0f 28 8c 24 50 01 00 00	movaps xmm1,XMMWORD PTR [rsp+0x150]
+   0x00005dc34007c8ac <+1676>:	0f 28 94 24 60 01 00 00	movaps xmm2,XMMWORD PTR [rsp+0x160]
+   0x00005dc34007c8b4 <+1684>:	0f 11 50 20        	movups XMMWORD PTR [rax+0x20],xmm2
+   0x00005dc34007c8b8 <+1688>:	0f 11 48 10        	movups XMMWORD PTR [rax+0x10],xmm1
+   0x00005dc34007c8bc <+1692>:	0f 11 00           	movups XMMWORD PTR [rax],xmm0
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+420	            throw_ub_custom!(
+   0x00005dc34007c8bf <+1695>:	48 8d 0d aa 99 0b 00	lea    rcx,[rip+0xb99aa]        # 0x5dc340136270 <core::ops::function::FnOnce::call_once<rustc_const_eval::interpret::memory::{impl#5}::deallocate_ptr::{closure_env#13}<miri::machine::MiriMachine>, ()>>
+   0x00005dc34007c8c6 <+1702>:	48 89 8c 24 40 03 00 00	mov    QWORD PTR [rsp+0x340],rcx
+   0x00005dc34007c8ce <+1710>:	⚠️ warning: (Internal error: pc 0x5dc340355ca8 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355ca8 in address map, but not in symtab.)
+48 8d 0d d3 93 2d 00	lea    rcx,[rip+0x2d93d3]        # 0x5dc340355ca8
+   0x00005dc34007c8d5 <+1717>:	48 8d bc 24 40 03 00 00	lea    rdi,[rsp+0x340]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/convert/mod.rs:
+778	        U::from(self)
+   0x00005dc34007c8dd <+1725>:	eb 5d              	jmp    0x5dc34007c93c <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1820>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/alloc/layout.rs:
+128	            ) => Layout::is_size_align_valid(size, align)
+   0x00005dc34007c8df <+1727>:	bf 08 00 00 00     	mov    edi,0x8
+   0x00005dc34007c8e4 <+1732>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c8e9 <+1737>:	ff 15 11 00 52 00  	call   QWORD PTR [rip+0x520011]        # 0x5dc34059c900
+   0x00005dc34007c8ef <+1743>:	84 c0              	test   al,al
+   0x00005dc34007c8f1 <+1745>:	0f 84 92 02 00 00  	je     0x5dc34007cb89 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2409>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:
+93	        __rust_no_alloc_shim_is_unstable_v2();
+   0x00005dc34007c8f7 <+1751>:	ff 15 cb 00 52 00  	call   QWORD PTR [rip+0x5200cb]        # 0x5dc34059c9c8
+
+94	
+95	        __rust_alloc(layout.size(), layout.align())
+   0x00005dc34007c8fd <+1757>:	bf 08 00 00 00     	mov    edi,0x8
+   0x00005dc34007c902 <+1762>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c907 <+1767>:	ff 15 c3 00 52 00  	call   QWORD PTR [rip+0x5200c3]        # 0x5dc34059c9d0
+
+116	}
+117	
+118	/// Reallocates memory with the global allocator.
+119	///
+120	/// This function forwards calls to the [`GlobalAlloc::realloc`] method
+121	/// of the allocator registered with the `#[global_allocator]` attribute
+122	/// if there is one, or the `std` crate’s default.
+123	///
+124	/// This function is expected to be deprecated in favor of the `grow` and `shrink` methods
+125	/// of the [`Global`] type when it and the [`Allocator`] trait become stable.
+126	///
+127	/// # Safety
+128	///
+129	/// See [`GlobalAlloc::realloc`].
+130	#[stable(feature = "global_alloc", since = "1.28.0")]
+131	#[must_use = "losing the pointer will leak memory"]
+132	#[inline]
+133	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+134	pub unsafe fn realloc(ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+135	    unsafe { __rust_realloc(ptr, layout.size(), layout.align(), new_size) }
+136	}
+137	
+138	/// Allocates zero-initialized memory with the global allocator.
+139	///
+140	/// This function forwards calls to the [`GlobalAlloc::alloc_zeroed`] method
+141	/// of the allocator registered with the `#[global_allocator]` attribute
+142	/// if there is one, or the `std` crate’s default.
+143	///
+144	/// This function is expected to be deprecated in favor of the `allocate_zeroed` method
+145	/// of the [`Global`] type when it and the [`Allocator`] trait become stable.
+146	///
+147	/// # Safety
+148	///
+149	/// See [`GlobalAlloc::alloc_zeroed`].
+150	///
+151	/// # Examples
+152	///
+153	/// ```
+154	/// use std::alloc::{alloc_zeroed, dealloc, handle_alloc_error, Layout};
+155	///
+156	/// unsafe {
+157	///     let layout = Layout::new::<u16>();
+158	///     let ptr = alloc_zeroed(layout);
+159	///     if ptr.is_null() {
+160	///         handle_alloc_error(layout);
+161	///     }
+162	///
+163	///     assert_eq!(*(ptr as *mut u16), 0);
+164	///
+165	///     dealloc(ptr, layout);
+166	/// }
+167	/// ```
+168	#[stable(feature = "global_alloc", since = "1.28.0")]
+169	#[must_use = "losing the pointer will leak memory"]
+170	#[inline]
+171	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+172	pub unsafe fn alloc_zeroed(layout: Layout) -> *mut u8 {
+173	    unsafe {
+174	        // Make sure we don't accidentally allow omitting the allocator shim in
+175	        // stable code until it is actually stabilized.
+176	        __rust_no_alloc_shim_is_unstable_v2();
+177	
+178	        __rust_alloc_zeroed(layout.size(), layout.align())
+179	    }
+180	}
+181	
+182	impl Global {
+183	    #[inline]
+184	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+185	    fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
+186	        match layout.size() {
+187	            0 => Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0)),
+188	            // SAFETY: `layout` is non-zero in size,
+189	            size => unsafe {
+190	                let raw_ptr = if zeroed { alloc_zeroed(layout) } else { alloc(layout) };
+191	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+192	                Ok(NonNull::slice_from_raw_parts(ptr, size))
+193	            },
+194	        }
+195	    }
+196	
+197	    // SAFETY: Same as `Allocator::grow`
+198	    #[inline]
+199	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+200	    unsafe fn grow_impl(
+201	        &self,
+202	        ptr: NonNull<u8>,
+203	        old_layout: Layout,
+204	        new_layout: Layout,
+205	        zeroed: bool,
+206	    ) -> Result<NonNull<[u8]>, AllocError> {
+207	        debug_assert!(
+208	            new_layout.size() >= old_layout.size(),
+209	            "`new_layout.size()` must be greater than or equal to `old_layout.size()`"
+210	        );
+211	
+212	        match old_layout.size() {
+213	            0 => self.alloc_impl(new_layout, zeroed),
+214	
+215	            // SAFETY: `new_size` is non-zero as `old_size` is greater than or equal to `new_size`
+216	            // as required by safety conditions. Other conditions must be upheld by the caller
+217	            old_size if old_layout.align() == new_layout.align() => unsafe {
+218	                let new_size = new_layout.size();
+219	
+220	                // `realloc` probably checks for `new_size >= old_layout.size()` or something similar.
+221	                hint::assert_unchecked(new_size >= old_layout.size());
+222	
+223	                let raw_ptr = realloc(ptr.as_ptr(), old_layout, new_size);
+224	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+225	                if zeroed {
+226	                    raw_ptr.add(old_size).write_bytes(0, new_size - old_size);
+227	                }
+228	                Ok(NonNull::slice_from_raw_parts(ptr, new_size))
+229	            },
+230	
+231	            // SAFETY: because `new_layout.size()` must be greater than or equal to `old_size`,
+232	            // both the old and new memory allocation are valid for reads and writes for `old_size`
+233	            // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
+234	            // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+235	            // for `dealloc` must be upheld by the caller.
+236	            old_size => unsafe {
+237	                let new_ptr = self.alloc_impl(new_layout, zeroed)?;
+238	                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), old_size);
+239	                self.deallocate(ptr, old_layout);
+240	                Ok(new_ptr)
+241	            },
+242	        }
+243	    }
+244	}
+245	
+246	#[unstable(feature = "allocator_api", issue = "32838")]
+247	unsafe impl Allocator for Global {
+248	    #[inline]
+249	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+250	    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+251	        self.alloc_impl(layout, false)
+252	    }
+253	
+254	    #[inline]
+255	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+256	    fn allocate_zeroed(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+257	        self.alloc_impl(layout, true)
+258	    }
+259	
+260	    #[inline]
+261	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+262	    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+263	        if layout.size() != 0 {
+264	            // SAFETY:
+265	            // * We have checked that `layout` is non-zero in size.
+266	            // * The caller is obligated to provide a layout that "fits", and in this case,
+267	            //   "fit" always means a layout that is equal to the original, because our
+268	            //   `allocate()`, `grow()`, and `shrink()` implementations never returns a larger
+269	            //   allocation than requested.
+270	            // * Other conditions must be upheld by the caller, as per `Allocator::deallocate()`'s
+271	            //   safety documentation.
+272	            unsafe { dealloc(ptr.as_ptr(), layout) }
+273	        }
+274	    }
+275	
+276	    #[inline]
+277	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+278	    unsafe fn grow(
+279	        &self,
+280	        ptr: NonNull<u8>,
+281	        old_layout: Layout,
+282	        new_layout: Layout,
+283	    ) -> Result<NonNull<[u8]>, AllocError> {
+284	        // SAFETY: all conditions must be upheld by the caller
+285	        unsafe { self.grow_impl(ptr, old_layout, new_layout, false) }
+286	    }
+287	
+288	    #[inline]
+289	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+290	    unsafe fn grow_zeroed(
+291	        &self,
+292	        ptr: NonNull<u8>,
+293	        old_layout: Layout,
+294	        new_layout: Layout,
+295	    ) -> Result<NonNull<[u8]>, AllocError> {
+296	        // SAFETY: all conditions must be upheld by the caller
+297	        unsafe { self.grow_impl(ptr, old_layout, new_layout, true) }
+298	    }
+299	
+300	    #[inline]
+301	    #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+302	    unsafe fn shrink(
+303	        &self,
+304	        ptr: NonNull<u8>,
+305	        old_layout: Layout,
+306	        new_layout: Layout,
+307	    ) -> Result<NonNull<[u8]>, AllocError> {
+308	        debug_assert!(
+309	            new_layout.size() <= old_layout.size(),
+310	            "`new_layout.size()` must be smaller than or equal to `old_layout.size()`"
+311	        );
+312	
+313	        match new_layout.size() {
+314	            // SAFETY: conditions must be upheld by the caller
+315	            0 => unsafe {
+316	                self.deallocate(ptr, old_layout);
+317	                Ok(NonNull::slice_from_raw_parts(new_layout.dangling(), 0))
+318	            },
+319	
+320	            // SAFETY: `new_size` is non-zero. Other conditions must be upheld by the caller
+321	            new_size if old_layout.align() == new_layout.align() => unsafe {
+322	                // `realloc` probably checks for `new_size <= old_layout.size()` or something similar.
+323	                hint::assert_unchecked(new_size <= old_layout.size());
+324	
+325	                let raw_ptr = realloc(ptr.as_ptr(), old_layout, new_size);
+326	                let ptr = NonNull::new(raw_ptr).ok_or(AllocError)?;
+327	                Ok(NonNull::slice_from_raw_parts(ptr, new_size))
+328	            },
+329	
+330	            // SAFETY: because `new_size` must be smaller than or equal to `old_layout.size()`,
+331	            // both the old and new memory allocation are valid for reads and writes for `new_size`
+332	            // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
+333	            // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+334	            // for `dealloc` must be upheld by the caller.
+335	            new_size => unsafe {
+336	                let new_ptr = self.allocate(new_layout)?;
+337	                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), new_size);
+338	                self.deallocate(ptr, old_layout);
+339	                Ok(new_ptr)
+340	            },
+341	        }
+342	    }
+343	}
+344	
+345	/// The allocator for `Box`.
+346	#[cfg(not(no_global_oom_handling))]
+347	#[lang = "exchange_malloc"]
+348	#[inline]
+349	#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
+350	unsafe fn exchange_malloc(size: usize, align: usize) -> *mut u8 {
+351	    let layout = unsafe { Layout::from_size_align_unchecked(size, align) };
+352	    match Global.allocate(layout) {
+   0x00005dc34007c90d <+1773>:	48 85 c0           	test   rax,rax
+   0x00005dc34007c910 <+1776>:	0f 84 c0 02 00 00  	je     0x5dc34007cbd6 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2486>
+   0x00005dc34007c916 <+1782>:	48 8b 4c 24 10     	mov    rcx,QWORD PTR [rsp+0x10]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:
+265	        return box_new(x);
+   0x00005dc34007c91b <+1787>:	48 89 08           	mov    QWORD PTR [rax],rcx
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+417	            throw_ub_custom!(fluent::const_eval_dealloc_immutable, alloc = alloc_id,);
+   0x00005dc34007c91e <+1790>:	48 8d 0d eb 98 0b 00	lea    rcx,[rip+0xb98eb]        # 0x5dc340136210 <core::ops::function::FnOnce::call_once<rustc_const_eval::interpret::memory::{impl#5}::deallocate_ptr::{closure_env#11}<miri::machine::MiriMachine>, ()>>
+   0x00005dc34007c925 <+1797>:	48 89 8c 24 d0 02 00 00	mov    QWORD PTR [rsp+0x2d0],rcx
+   0x00005dc34007c92d <+1805>:	⚠️ warning: (Internal error: pc 0x5dc340355c50 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355c50 in address map, but not in symtab.)
+48 8d 0d 1c 93 2d 00	lea    rcx,[rip+0x2d931c]        # 0x5dc340355c50
+   0x00005dc34007c934 <+1812>:	48 8d bc 24 d0 02 00 00	lea    rdi,[rsp+0x2d0]
+   0x00005dc34007c93c <+1820>:	48 89 47 08        	mov    QWORD PTR [rdi+0x8],rax
+   0x00005dc34007c940 <+1824>:	48 89 4f 10        	mov    QWORD PTR [rdi+0x10],rcx
+   0x00005dc34007c944 <+1828>:	48 b8 02 00 00 00 00 00 00 80	movabs rax,0x8000000000000002
+   0x00005dc34007c94e <+1838>:	48 89 47 50        	mov    QWORD PTR [rdi+0x50],rax
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/convert/mod.rs:
+778	        U::from(self)
+   0x00005dc34007c952 <+1842>:	ff 15 f8 09 52 00  	call   QWORD PTR [rip+0x5209f8]        # 0x5dc34059d350
+   0x00005dc34007c958 <+1848>:	48 89 c5           	mov    rbp,rax
+   0x00005dc34007c95b <+1851>:	48 8d 7c 24 50     	lea    rdi,[rsp+0x50]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+362	    #[instrument(skip(self), level = "debug")]
+   0x00005dc34007c960 <+1856>:	e8 7b c8 17 00     	call   0x5dc3401f91e0 <core::ptr::drop_in_place<rustc_middle::mir::interpret::allocation::Allocation<miri::machine::Provenance, miri::machine::AllocExtra, miri::alloc::alloc_bytes::MiriAllocBytes>>>
+   0x00005dc34007c965 <+1861>:	e9 4c fa ff ff     	jmp    0x5dc34007c3b6 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+406>
+   0x00005dc34007c96a <+1866>:	49 be 02 00 00 00 00 00 00 80	movabs r14,0x8000000000000002
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:
+265	        return box_new(x);
+   0x00005dc34007c974 <+1876>:	bf 18 00 00 00     	mov    edi,0x18
+   0x00005dc34007c979 <+1881>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c97e <+1886>:	e8 fd 43 01 00     	call   0x5dc340090d80 <alloc::alloc::exchange_malloc>
+   0x00005dc34007c983 <+1891>:	48 8b 4c 24 10     	mov    rcx,QWORD PTR [rsp+0x10]
+   0x00005dc34007c988 <+1896>:	48 89 08           	mov    QWORD PTR [rax],rcx
+   0x00005dc34007c98b <+1899>:	48 8d 0d da 29 a9 ff	lea    rcx,[rip+0xffffffffffa929da]        # 0x5dc33fb0f36c
+   0x00005dc34007c992 <+1906>:	48 89 48 08        	mov    QWORD PTR [rax+0x8],rcx
+   0x00005dc34007c996 <+1910>:	48 c7 40 10 06 00 00 00	mov    QWORD PTR [rax+0x10],0x6
+   0x00005dc34007c99e <+1918>:	⚠️ warning: (Internal error: pc 0x5dc340355d28 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355d28 in address map, but not in symtab.)
+48 8d 0d 83 93 2d 00	lea    rcx,[rip+0x2d9383]        # 0x5dc340355d28
+   0x00005dc34007c9a5 <+1925>:	eb 78              	jmp    0x5dc34007ca1f <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2047>
+   0x00005dc34007c9a7 <+1927>:	49 be 02 00 00 00 00 00 00 80	movabs r14,0x8000000000000002
+   0x00005dc34007c9b1 <+1937>:	bf 18 00 00 00     	mov    edi,0x18
+   0x00005dc34007c9b6 <+1942>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c9bb <+1947>:	e8 c0 43 01 00     	call   0x5dc340090d80 <alloc::alloc::exchange_malloc>
+   0x00005dc34007c9c0 <+1952>:	48 8b 4c 24 10     	mov    rcx,QWORD PTR [rsp+0x10]
+   0x00005dc34007c9c5 <+1957>:	48 89 08           	mov    QWORD PTR [rax],rcx
+   0x00005dc34007c9c8 <+1960>:	48 8d 0d 95 29 a9 ff	lea    rcx,[rip+0xffffffffffa92995]        # 0x5dc33fb0f364
+   0x00005dc34007c9cf <+1967>:	48 89 48 08        	mov    QWORD PTR [rax+0x8],rcx
+   0x00005dc34007c9d3 <+1971>:	48 c7 40 10 02 00 00 00	mov    QWORD PTR [rax+0x10],0x2
+   0x00005dc34007c9db <+1979>:	⚠️ warning: (Internal error: pc 0x5dc340355cc8 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355cc8 in address map, but not in symtab.)
+48 8d 0d e6 92 2d 00	lea    rcx,[rip+0x2d92e6]        # 0x5dc340355cc8
+   0x00005dc34007c9e2 <+1986>:	eb 3b              	jmp    0x5dc34007ca1f <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2047>
+   0x00005dc34007c9e4 <+1988>:	49 be 02 00 00 00 00 00 00 80	movabs r14,0x8000000000000002
+   0x00005dc34007c9ee <+1998>:	bf 18 00 00 00     	mov    edi,0x18
+   0x00005dc34007c9f3 <+2003>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007c9f8 <+2008>:	e8 83 43 01 00     	call   0x5dc340090d80 <alloc::alloc::exchange_malloc>
+   0x00005dc34007c9fd <+2013>:	48 8b 4c 24 10     	mov    rcx,QWORD PTR [rsp+0x10]
+   0x00005dc34007ca02 <+2018>:	48 89 08           	mov    QWORD PTR [rax],rcx
+   0x00005dc34007ca05 <+2021>:	48 8d 0d 5a 29 a9 ff	lea    rcx,[rip+0xffffffffffa9295a]        # 0x5dc33fb0f366
+   0x00005dc34007ca0c <+2028>:	48 89 48 08        	mov    QWORD PTR [rax+0x8],rcx
+   0x00005dc34007ca10 <+2032>:	48 c7 40 10 06 00 00 00	mov    QWORD PTR [rax+0x10],0x6
+   0x00005dc34007ca18 <+2040>:	⚠️ warning: (Internal error: pc 0x5dc340355ce8 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355ce8 in address map, but not in symtab.)
+48 8d 0d c9 92 2d 00	lea    rcx,[rip+0x2d92c9]        # 0x5dc340355ce8
+   0x00005dc34007ca1f <+2047>:	4c 8d 25 ba 97 0b 00	lea    r12,[rip+0xb97ba]        # 0x5dc3401361e0 <core::ops::function::FnOnce::call_once<rustc_const_eval::interpret::memory::{impl#5}::deallocate_ptr::{closure_env#3}<miri::machine::MiriMachine>, ()>>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:
+968	            Err(e) => Err(op(e)),
+   0x00005dc34007ca26 <+2054>:	4c 89 64 24 50     	mov    QWORD PTR [rsp+0x50],r12
+   0x00005dc34007ca2b <+2059>:	48 89 44 24 58     	mov    QWORD PTR [rsp+0x58],rax
+   0x00005dc34007ca30 <+2064>:	48 89 4c 24 60     	mov    QWORD PTR [rsp+0x60],rcx
+   0x00005dc34007ca35 <+2069>:	4c 89 b4 24 a0 00 00 00	mov    QWORD PTR [rsp+0xa0],r14
+   0x00005dc34007ca3d <+2077>:	e9 66 f9 ff ff     	jmp    0x5dc34007c3a8 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+392>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_middle/src/mir/interpret/allocation.rs:
+545	        self.bytes.len()
+   0x00005dc34007ca42 <+2082>:	48 8d bc 24 d8 00 00 00	lea    rdi,[rsp+0xd8]
+   0x00005dc34007ca4a <+2090>:	ff 15 f8 16 52 00  	call   QWORD PTR [rip+0x5216f8]        # 0x5dc34059e148
+   0x00005dc34007ca50 <+2096>:	49 89 d6           	mov    r14,rdx
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+433	                    align = alloc.align.bytes(),
+   0x00005dc34007ca53 <+2099>:	44 0f b6 bc 24 39 01 00 00	movzx  r15d,BYTE PTR [rsp+0x139]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:
+265	        return box_new(x);
+   0x00005dc34007ca5c <+2108>:	bf 28 00 00 00     	mov    edi,0x28
+   0x00005dc34007ca61 <+2113>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007ca66 <+2118>:	e8 15 43 01 00     	call   0x5dc340090d80 <alloc::alloc::exchange_malloc>
+   0x00005dc34007ca6b <+2123>:	40 0f b6 cd        	movzx  ecx,bpl
+   0x00005dc34007ca6f <+2127>:	ba 01 00 00 00     	mov    edx,0x1
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_abi/src/lib.rs:
+1054	        1 << self.pow2
+   0x00005dc34007ca74 <+2132>:	be 01 00 00 00     	mov    esi,0x1
+   0x00005dc34007ca79 <+2137>:	48 d3 e6           	shl    rsi,cl
+   0x00005dc34007ca7c <+2140>:	44 89 f9           	mov    ecx,r15d
+   0x00005dc34007ca7f <+2143>:	48 d3 e2           	shl    rdx,cl
+   0x00005dc34007ca82 <+2146>:	48 8b 4c 24 10     	mov    rcx,QWORD PTR [rsp+0x10]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:
+265	        return box_new(x);
+   0x00005dc34007ca87 <+2151>:	48 89 08           	mov    QWORD PTR [rax],rcx
+   0x00005dc34007ca8a <+2154>:	4c 89 70 08        	mov    QWORD PTR [rax+0x8],r14
+   0x00005dc34007ca8e <+2158>:	48 89 50 10        	mov    QWORD PTR [rax+0x10],rdx
+   0x00005dc34007ca92 <+2162>:	4c 89 60 18        	mov    QWORD PTR [rax+0x18],r12
+   0x00005dc34007ca96 <+2166>:	48 89 70 20        	mov    QWORD PTR [rax+0x20],rsi
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+429	                throw_ub_custom!(
+   0x00005dc34007ca9a <+2170>:	48 8d 0d ff 97 0b 00	lea    rcx,[rip+0xb97ff]        # 0x5dc3401362a0 <core::ops::function::FnOnce::call_once<rustc_const_eval::interpret::memory::{impl#5}::deallocate_ptr::{closure_env#15}<miri::machine::MiriMachine>, ()>>
+   0x00005dc34007caa1 <+2177>:	48 89 8c 24 b0 03 00 00	mov    QWORD PTR [rsp+0x3b0],rcx
+   0x00005dc34007caa9 <+2185>:	⚠️ warning: (Internal error: pc 0x5dc340355c70 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355c70 in address map, but not in symtab.)
+48 8d 0d c0 91 2d 00	lea    rcx,[rip+0x2d91c0]        # 0x5dc340355c70
+   0x00005dc34007cab0 <+2192>:	48 8d bc 24 b0 03 00 00	lea    rdi,[rsp+0x3b0]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/convert/mod.rs:
+778	        U::from(self)
+   0x00005dc34007cab8 <+2200>:	e9 7f fe ff ff     	jmp    0x5dc34007c93c <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1820>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cell.rs:
+2044	        match borrow.get() {
+   0x00005dc34007cabd <+2205>:	49 83 be 88 08 00 00 00	cmp    QWORD PTR [r14+0x888],0x0
+   0x00005dc34007cac5 <+2213>:	0f 85 2c 01 00 00  	jne    0x5dc34007cbf7 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2519>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/mem/mod.rs:
+894	        crate::intrinsics::write_via_move(dest, src);
+   0x00005dc34007cacb <+2219>:	49 c7 86 88 08 00 00 ff ff ff ff	mov    QWORD PTR [r14+0x888],0xffffffffffffffff
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cell.rs:
+2425	        self as *const UnsafeCell<T> as *const T as *mut T
+   0x00005dc34007cad6 <+2230>:	49 8d be 90 08 00 00	lea    rdi,[r14+0x890]
+   0x00005dc34007cadd <+2237>:	48 8d 74 24 30     	lea    rsi,[rsp+0x30]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/collections/hash/map.rs:
+1176	        self.base.get_mut(k)
+   0x00005dc34007cae2 <+2242>:	e8 69 ef 15 00     	call   0x5dc3401dba50 <hashbrown::map::HashMap<rustc_middle::mir::interpret::AllocId, (rustc_span::span_encoding::Span, core::option::Option<rustc_span::span_encoding::Span>), rustc_hash::FxBuildHasher, alloc::alloc::Global>::get_mut<rustc_middle::mir::interpret::AllocId, (rustc_span::span_encoding::Span, core::option::Option<rustc_span::span_encoding::Span>), rustc_hash::FxBuildHasher, alloc::alloc::Global, rustc_middle::mir::interpret::AllocId>>
+
+src/machine.rs:
+1755	        if let Some((_, deallocated_at)) = machine.allocation_spans.borrow_mut().get_mut(&alloc_id)
+   0x00005dc34007cae7 <+2247>:	49 89 c5           	mov    r13,rax
+   0x00005dc34007caea <+2250>:	48 85 c0           	test   rax,rax
+   0x00005dc34007caed <+2253>:	74 15              	je     0x5dc34007cb04 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2276>
+
+1756	        {
+1757	            *deallocated_at = Some(machine.current_user_relevant_span());
+   0x00005dc34007caef <+2255>:	4c 89 f7           	mov    rdi,r14
+   0x00005dc34007caf2 <+2258>:	ff 15 48 03 52 00  	call   QWORD PTR [rip+0x520348]        # 0x5dc34059ce40
+   0x00005dc34007caf8 <+2264>:	41 c7 45 08 01 00 00 00	mov    DWORD PTR [r13+0x8],0x1
+   0x00005dc34007cb00 <+2272>:	49 89 45 0c        	mov    QWORD PTR [r13+0xc],rax
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/mem/mod.rs:
+894	        crate::intrinsics::write_via_move(dest, src);
+   0x00005dc34007cb04 <+2276>:	49 ff 86 88 08 00 00	inc    QWORD PTR [r14+0x888]
+
+src/machine.rs:
+1759	        machine.free_alloc_id(alloc_id, size, align, kind);
+   0x00005dc34007cb0b <+2283>:	0f b6 4c 24 28     	movzx  ecx,BYTE PTR [rsp+0x28]
+   0x00005dc34007cb10 <+2288>:	45 0f b6 c7        	movzx  r8d,r15b
+   0x00005dc34007cb14 <+2292>:	4c 89 f7           	mov    rdi,r14
+   0x00005dc34007cb17 <+2295>:	48 8b 74 24 10     	mov    rsi,QWORD PTR [rsp+0x10]
+   0x00005dc34007cb1c <+2300>:	48 8b 54 24 20     	mov    rdx,QWORD PTR [rsp+0x20]
+   0x00005dc34007cb21 <+2305>:	ff 15 01 03 52 00  	call   QWORD PTR [rip+0x520301]        # 0x5dc34059ce28
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+454	        let old = self.memory.dead_alloc_map.insert(alloc_id, (size, alloc.align));
+   0x00005dc34007cb27 <+2311>:	49 81 c6 38 09 00 00	add    r14,0x938
+
+/rust/deps/indexmap-2.12.0/src/map.rs:
+⚠️ warning: 464	/rust/deps/indexmap-2.12.0/src/map.rs: No such file or directory
+   0x00005dc34007cb2e <+2318>:	44 0f b6 8c 24 39 01 00 00	movzx  r9d,BYTE PTR [rsp+0x139]
+   0x00005dc34007cb37 <+2327>:	48 8d bc 24 40 01 00 00	lea    rdi,[rsp+0x140]
+   0x00005dc34007cb3f <+2335>:	4c 89 f6           	mov    rsi,r14
+   0x00005dc34007cb42 <+2338>:	48 89 da           	mov    rdx,rbx
+   0x00005dc34007cb45 <+2341>:	48 8b 4c 24 10     	mov    rcx,QWORD PTR [rsp+0x10]
+   0x00005dc34007cb4a <+2346>:	4c 8b 44 24 20     	mov    r8,QWORD PTR [rsp+0x20]
+   0x00005dc34007cb4f <+2351>:	e8 9c 49 11 00     	call   0x5dc3401914f0 <indexmap::map::core::IndexMapCore<rustc_middle::mir::interpret::AllocId, (rustc_abi::Size, rustc_abi::Align)>::insert_full<rustc_middle::mir::interpret::AllocId, (rustc_abi::Size, rustc_abi::Align)>>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+455	        if old.is_some() {
+   0x00005dc34007cb54 <+2356>:	48 83 bc 24 48 01 00 00 01	cmp    QWORD PTR [rsp+0x148],0x1
+   0x00005dc34007cb5d <+2365>:	0f 84 a3 00 00 00  	je     0x5dc34007cc06 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2534>
+   0x00005dc34007cb63 <+2371>:	48 8d 7c 24 50     	lea    rdi,[rsp+0x50]
+
+362	    #[instrument(skip(self), level = "debug")]
+   0x00005dc34007cb68 <+2376>:	e8 73 c6 17 00     	call   0x5dc3401f91e0 <core::ptr::drop_in_place<rustc_middle::mir::interpret::allocation::Allocation<miri::machine::Provenance, miri::machine::AllocExtra, miri::alloc::alloc_bytes::MiriAllocBytes>>>
+   0x00005dc34007cb6d <+2381>:	31 ed              	xor    ebp,ebp
+   0x00005dc34007cb6f <+2383>:	e9 42 f8 ff ff     	jmp    0x5dc34007c3b6 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+406>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:
+354	        Err(_) => handle_alloc_error(layout),
+   0x00005dc34007cb74 <+2388>:	bf 08 00 00 00     	mov    edi,0x8
+   0x00005dc34007cb79 <+2393>:	be 28 00 00 00     	mov    esi,0x28
+   0x00005dc34007cb7e <+2398>:	ff 15 64 fe 51 00  	call   QWORD PTR [rip+0x51fe64]        # 0x5dc34059c9e8
+   0x00005dc34007cb84 <+2404>:	e9 b1 00 00 00     	jmp    0x5dc34007cc3a <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2586>
+   0x00005dc34007cb89 <+2409>:	48 8d 3d 5d 32 a9 ff	lea    rdi,[rip+0xffffffffffa9325d]        # 0x5dc33fb0fded <anon.fbe1bda1a39fcee7de5a4cb539239fa9.1210.llvm>
+   0x00005dc34007cb90 <+2416>:	48 8d 0d 79 9e 2d 00	lea    rcx,[rip+0x2d9e79]        # 0x5dc340356a10
+   0x00005dc34007cb97 <+2423>:	be 33 02 00 00     	mov    esi,0x233
+   0x00005dc34007cb9c <+2428>:	31 d2              	xor    edx,edx
+   0x00005dc34007cb9e <+2430>:	ff 15 64 fd 51 00  	call   QWORD PTR [rip+0x51fd64]        # 0x5dc34059c908
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ub_checks.rs:
+73	                    ::core::panicking::panic_nounwind_fmt(::core::fmt::Arguments::from_str(msg), false);
+   0x00005dc34007cba4 <+2436>:	48 8d 3d 42 32 a9 ff	lea    rdi,[rip+0xffffffffffa93242]        # 0x5dc33fb0fded <anon.fbe1bda1a39fcee7de5a4cb539239fa9.1210.llvm>
+   0x00005dc34007cbab <+2443>:	48 8d 0d b6 a1 2d 00	lea    rcx,[rip+0x2da1b6]        # 0x5dc340356d68 <anon.fbe1bda1a39fcee7de5a4cb539239fa9.1326.llvm>
+   0x00005dc34007cbb2 <+2450>:	eb e3              	jmp    0x5dc34007cb97 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2423>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:
+354	        Err(_) => handle_alloc_error(layout),
+   0x00005dc34007cbb4 <+2452>:	bf 08 00 00 00     	mov    edi,0x8
+   0x00005dc34007cbb9 <+2457>:	be 18 00 00 00     	mov    esi,0x18
+   0x00005dc34007cbbe <+2462>:	ff 15 24 fe 51 00  	call   QWORD PTR [rip+0x51fe24]        # 0x5dc34059c9e8
+   0x00005dc34007cbc4 <+2468>:	bf 08 00 00 00     	mov    edi,0x8
+   0x00005dc34007cbc9 <+2473>:	be 38 00 00 00     	mov    esi,0x38
+   0x00005dc34007cbce <+2478>:	ff 15 14 fe 51 00  	call   QWORD PTR [rip+0x51fe14]        # 0x5dc34059c9e8
+   0x00005dc34007cbd4 <+2484>:	eb 64              	jmp    0x5dc34007cc3a <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2586>
+   0x00005dc34007cbd6 <+2486>:	bf 08 00 00 00     	mov    edi,0x8
+   0x00005dc34007cbdb <+2491>:	be 08 00 00 00     	mov    esi,0x8
+   0x00005dc34007cbe0 <+2496>:	ff 15 02 fe 51 00  	call   QWORD PTR [rip+0x51fe02]        # 0x5dc34059c9e8
+   0x00005dc34007cbe6 <+2502>:	eb 52              	jmp    0x5dc34007cc3a <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2586>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs:
+1016	            None => unwrap_failed(),
+   0x00005dc34007cbe8 <+2504>:	48 8d 3d 11 a4 2d 00	lea    rdi,[rip+0x2da411]        # 0x5dc340357000
+   0x00005dc34007cbef <+2511>:	ff 15 3b fd 51 00  	call   QWORD PTR [rip+0x51fd3b]        # 0x5dc34059c930
+   0x00005dc34007cbf5 <+2517>:	eb 43              	jmp    0x5dc34007cc3a <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2586>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/cell.rs:
+1202	            Err(err) => panic_already_borrowed(err),
+   0x00005dc34007cbf7 <+2519>:	48 8d 3d 1a a4 2d 00	lea    rdi,[rip+0x2da41a]        # 0x5dc340357018
+   0x00005dc34007cbfe <+2526>:	ff 15 54 05 52 00  	call   QWORD PTR [rip+0x520554]        # 0x5dc34059d158
+   0x00005dc34007cc04 <+2532>:	eb 34              	jmp    0x5dc34007cc3a <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2586>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+456	            bug!("Nothing can be deallocated twice");
+   0x00005dc34007cc06 <+2534>:	48 8d 3d d3 d2 a7 ff	lea    rdi,[rip+0xffffffffffa7d2d3]        # 0x5dc33faf9ee0
+   0x00005dc34007cc0d <+2541>:	48 8d 15 7c 90 2d 00	lea    rdx,[rip+0x2d907c]        # 0x5dc340355c90
+   0x00005dc34007cc14 <+2548>:	be 41 00 00 00     	mov    esi,0x41
+   0x00005dc34007cc19 <+2553>:	ff 15 99 05 52 00  	call   QWORD PTR [rip+0x520599]        # 0x5dc34059d1b8
+   0x00005dc34007cc1f <+2559>:	eb 19              	jmp    0x5dc34007cc3a <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2586>
+
+src/concurrency/genmc/dummy.rs:
+188	        unreachable!()
+   0x00005dc34007cc21 <+2561>:	48 8d 3d 05 21 a8 ff	lea    rdi,[rip+0xffffffffffa82105]        # 0x5dc33fafed2d <anon.8bdf15b94e8df9dc4fe833c5f54cc35a.2.llvm>
+   0x00005dc34007cc28 <+2568>:	48 8d 15 31 f4 2c 00	lea    rdx,[rip+0x2cf431]        # 0x5dc34034c060 <anon.8bdf15b94e8df9dc4fe833c5f54cc35a.12.llvm>
+   0x00005dc34007cc2f <+2575>:	be 28 00 00 00     	mov    esi,0x28
+   0x00005dc34007cc34 <+2580>:	ff 15 56 fe 51 00  	call   QWORD PTR [rip+0x51fe56]        # 0x5dc34059ca90
+   0x00005dc34007cc3a <+2586>:	0f 0b              	ud2
+   0x00005dc34007cc3c <+2588>:	48 89 c3           	mov    rbx,rax
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/mem/mod.rs:
+894	        crate::intrinsics::write_via_move(dest, src);
+   0x00005dc34007cc3f <+2591>:	49 ff 86 88 08 00 00	inc    QWORD PTR [r14+0x888]
+
+src/machine.rs:
+1758	        }
+   0x00005dc34007cc46 <+2598>:	eb 51              	jmp    0x5dc34007cc99 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2681>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ub_checks.rs:
+68	            const fn precondition_check($($name:$ty),*) {
+   0x00005dc34007cc48 <+2600>:	ff 15 c2 fc 51 00  	call   QWORD PTR [rip+0x51fcc2]        # 0x5dc34059c910
+   0x00005dc34007cc4e <+2606>:	ff 15 bc fc 51 00  	call   QWORD PTR [rip+0x51fcbc]        # 0x5dc34059c910
+   0x00005dc34007cc54 <+2612>:	48 89 c3           	mov    rbx,rax
+   0x00005dc34007cc57 <+2615>:	48 8d 7c 24 30     	lea    rdi,[rsp+0x30]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/raw_vec/mod.rs:
+404	        unsafe { self.inner.deallocate(T::LAYOUT) }
+   0x00005dc34007cc5c <+2620>:	be 01 00 00 00     	mov    esi,0x1
+   0x00005dc34007cc61 <+2625>:	ba 01 00 00 00     	mov    edx,0x1
+   0x00005dc34007cc66 <+2630>:	e8 25 3e f3 ff     	call   0x5dc33ffb0a90 <alloc::raw_vec::RawVecInner<alloc::alloc::Global>::deallocate<alloc::alloc::Global>>
+   0x00005dc34007cc6b <+2635>:	eb 2c              	jmp    0x5dc34007cc99 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2681>
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ub_checks.rs:
+68	            const fn precondition_check($($name:$ty),*) {
+   0x00005dc34007cc6d <+2637>:	ff 15 9d fc 51 00  	call   QWORD PTR [rip+0x51fc9d]        # 0x5dc34059c910
+   0x00005dc34007cc73 <+2643>:	48 89 c3           	mov    rbx,rax
+   0x00005dc34007cc76 <+2646>:	eb 21              	jmp    0x5dc34007cc99 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2681>
+   0x00005dc34007cc78 <+2648>:	ff 15 92 fc 51 00  	call   QWORD PTR [rip+0x51fc92]        # 0x5dc34059c910
+   0x00005dc34007cc7e <+2654>:	ff 15 8c fc 51 00  	call   QWORD PTR [rip+0x51fc8c]        # 0x5dc34059c910
+   0x00005dc34007cc84 <+2660>:	48 89 c3           	mov    rbx,rax
+   0x00005dc34007cc87 <+2663>:	eb 10              	jmp    0x5dc34007cc99 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2681>
+   0x00005dc34007cc89 <+2665>:	48 89 c3           	mov    rbx,rax
+   0x00005dc34007cc8c <+2668>:	48 8d bc 24 40 01 00 00	lea    rdi,[rsp+0x140]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:
+266	    }
+   0x00005dc34007cc94 <+2676>:	e8 77 0b fc ff     	call   0x5dc34003d810 <core::ptr::drop_in_place<rustc_const_eval::interpret::memory::{impl#5}::deallocate_ptr::{closure_env#14}<miri::machine::MiriMachine>>>
+   0x00005dc34007cc99 <+2681>:	48 8d 7c 24 50     	lea    rdi,[rsp+0x50]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:
+362	    #[instrument(skip(self), level = "debug")]
+   0x00005dc34007cc9e <+2686>:	e8 3d c5 17 00     	call   0x5dc3401f91e0 <core::ptr::drop_in_place<rustc_middle::mir::interpret::allocation::Allocation<miri::machine::Provenance, miri::machine::AllocExtra, miri::alloc::alloc_bytes::MiriAllocBytes>>>
+   0x00005dc34007cca3 <+2691>:	eb 1d              	jmp    0x5dc34007ccc2 <rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+2722>
+
+363	    pub fn deallocate_ptr(
+   0x00005dc34007cca5 <+2693>:	ff 15 f5 fc 51 00  	call   QWORD PTR [rip+0x51fcf5]        # 0x5dc34059c9a0
+   0x00005dc34007ccab <+2699>:	48 89 c3           	mov    rbx,rax
+   0x00005dc34007ccae <+2702>:	48 8d 7c 24 50     	lea    rdi,[rsp+0x50]
+
+/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/raw_vec/mod.rs:
+404	        unsafe { self.inner.deallocate(T::LAYOUT) }
+   0x00005dc34007ccb3 <+2707>:	be 01 00 00 00     	mov    esi,0x1
+   0x00005dc34007ccb8 <+2712>:	ba 01 00 00 00     	mov    edx,0x1
+   0x00005dc34007ccbd <+2717>:	e8 ce 3d f3 ff     	call   0x5dc33ffb0a90 <alloc::raw_vec::RawVecInner<alloc::alloc::Global>::deallocate<alloc::alloc::Global>>
+   0x00005dc34007ccc2 <+2722>:	48 89 df           	mov    rdi,rbx
+   0x00005dc34007ccc5 <+2725>:	e8 46 ce 2c 00     	call   0x5dc340349b10 <_Unwind_Resume@plt>
+End of assembler dump.
+Note: breakpoint 8 also set at pc 0x5dc34007c61e.
+Breakpoint 9 at 0x5dc34007c61e: file src/machine.rs, line 1723.
+Num     Type           Disp Enb Address            What
+1       catchpoint     keep y                      exec, program "/root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/miri" 
+	catchpoint already hit 32 times
+2       breakpoint     keep y   0x00005dc33ffe5725 in miri::eval::eval_entry::{closure#0} at src/eval.rs:490 inf 11
+	breakpoint already hit 1 time
+3       breakpoint     keep y   0x00005dc3400a6998 in miri::concurrency::thread::EvalContextExt::run_threads<rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>> at src/concurrency/thread.rs:1432 inf 11
+6       breakpoint     keep y   0x00005dc33ffb1c6d in miri::borrow_tracker::AllocState::before_memory_deallocation at src/borrow_tracker/mod.rs:476 inf 11
+	breakpoint already hit 2 times
+8       breakpoint     keep y   0x00005dc34007c61e in miri::machine::{impl#16}::before_memory_deallocation at src/machine.rs:1723 inf 11
+9       breakpoint     keep y   0x00005dc34007c61e in miri::machine::{impl#16}::before_memory_deallocation at src/machine.rs:1723 inf 11
+Continuing.
+[H[2J[3J─── Output/messages ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Thread 11.21 "rustc" hit Breakpoint 9, miri::machine::{impl#16}::before_memory_deallocation (machine=0x7169c616e630, alloc_extra=0x7169c616cd10, size=..., 
+    align=..., kind=..., _tcx=..., ptr=<error reading variable: Cannot access memory at address 0x0>) at src/machine.rs:1723
+1723	        (alloc_id, prove_extra): (AllocId, Self::ProvenanceExtra),
+⚠️ warning: (Internal error: pc 0x5dc340355ca8 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355ca8 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355c50 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355c50 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355d28 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355d28 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355cc8 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355cc8 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355ce8 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355ce8 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc340355c70 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc340355c70 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc34034e938 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc34034e938 in address map, but not in symtab.)
+⚠️ warning: (Internal error: pc 0x5dc34034e938 in read in CU, but not in symtab.)
+⚠️ warning: (Error: pc 0x5dc34034e938 in address map, but not in symtab.)
+─── Assembly ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~
+~
+!0x00005dc34007c61e  48 89 44 24 30         mov    QWORD PTR [rsp+0x30],rax
+ 0x00005dc34007c623  49 8d be c0 02 00 00   lea    rdi,[r14+0x2c0]
+ 0x00005dc34007c62a  48 8d 74 24 30         lea    rsi,[rsp+0x30]
+─── Source: /KMiri/kmiri/src/machine.rs ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1713          }
+ 1714          interp_ok(())
+ 1715      }
+ 1716  
+ 1717      #[inline(always)]
+ 1718      fn before_memory_deallocation(
+ 1719          _tcx: TyCtxtAt<'tcx>,
+ 1720          machine: &mut Self,
+ 1721          alloc_extra: &mut AllocExtra<'tcx>,
+ 1722          ptr: Pointer,
+!1723          (alloc_id, prove_extra): (AllocId, Self::ProvenanceExtra),
+ 1724          size: Size,
+ 1725          align: Align,
+ 1726          kind: MemoryKind,
+ 1727      ) -> InterpResult<'tcx> {
+ 1728          if machine.tracked_alloc_ids.contains(&alloc_id) {
+ 1729              machine.emit_diagnostic(NonHaltingDiagnostic::FreedAlloc(alloc_id));
+ 1730          }
+ 1731          match &machine.data_race {
+ 1732              GlobalDataRaceHandler::None => {}
+─── Stack ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0] from 0x00005dc34007c61e in miri::machine::{impl#16}::before_memory_deallocation+0 at src/machine.rs:1723
+[1] from 0x00005dc34007c61e in rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine>+1022 at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:442
+[2] from 0x00005dc340089b22 in rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_local<miri::machine::MiriMachine>+63 at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/stack.rs:597
+[+]
+─── Variables ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Traceback (most recent call last):
+  File "<string>", line 550, in render
+  File "<string>", line 1570, in lines
+  File "<string>", line 1614, in format_frame
+  File "<string>", line 1645, in fetch
+gdb.MemoryError: Cannot access memory at address 0x0
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+#0  miri::machine::{impl#16}::before_memory_deallocation (machine=0x7169c616e630, alloc_extra=0x7169c616cd10, size=..., align=..., kind=..., _tcx=..., 
+    ptr=<error reading variable: Cannot access memory at address 0x0>) at src/machine.rs:1723
+#1  rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_ptr<miri::machine::MiriMachine> (self=0x7169c616e630, ptr=..., 
+    old_size_and_align=..., kind=...)
+    at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/memory.rs:442
+#2  0x00005dc340089b22 in rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::deallocate_local<miri::machine::MiriMachine> (
+    self=0x7169c616e630, local=...)
+    at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/stack.rs:597
+#3  rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::pop_stack_frame_raw<miri::machine::MiriMachine, rustc_const_eval::interpret::call::{impl#1}::return_from_current_stack_frame::{closure_env#0}<miri::machine::MiriMachine>> (self=0x7169c616e630, unwinding=false, copy_ret_val=...)
+    at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/stack.rs:454
+#4  rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::return_from_current_stack_frame<miri::machine::MiriMachine> (
+    self=0x7169c616e630, unwinding=false)
+    at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/call.rs:898
+#5  0x00005dc3400a720e in rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::eval_terminator<miri::machine::MiriMachine> (
+    self=0x7169c616e630, terminator=0x7169b83ead88)
+    at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/step.rs:509
+#6  rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>::step<miri::machine::MiriMachine> (self=0x7169c616e630)
+    at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/rustc-src/rust/compiler/rustc_const_eval/src/interpret/step.rs:68
+#7  miri::concurrency::thread::EvalContextExt::run_threads<rustc_const_eval::interpret::eval_context::InterpCx<miri::machine::MiriMachine>> (
+    self=0x7169c616e630) at src/concurrency/thread.rs:1447
+#8  0x00005dc33ffe572a in miri::eval::eval_entry::{closure#0} () at src/eval.rs:490
+#9  core::ops::function::FnOnce::call_once<miri::eval::eval_entry::{closure_env#0}, ()> ()
+    at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250
+#10 core::panic::unwind_safe::{impl#23}::call_once<rustc_middle::mir::interpret::error::InterpResult<!>, miri::eval::eval_entry::{closure_env#0}> (self=...)
+    at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/panic/unwind_safe.rs:274
+#11 std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<miri::eval::eval_entry::{closure_env#0}>, rustc_middle::mir::interpret::error::InterpResult<!>> (data=<error reading variable: Cannot access memory at address 0x0>)
+    at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panicking.rs:581
+#12 std::panicking::catch_unwind<rustc_middle::mir::interpret::error::InterpResult<!>, core::panic::unwind_safe::AssertUnwindSafe<miri::eval::eval_entry::{closure_env#0}>> (f=...) at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panicking.rs:544
+#13 std::panic::catch_unwind<core::panic::unwind_safe::AssertUnwindSafe<miri::eval::eval_entry::{closure_env#0}>, rustc_middle::mir::interpret::error::InterpResult<!>> (f=...) at /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panic.rs:359
+#14 miri::eval::eval_entry (tcx=..., entry_id=..., entry_type=..., config=0x7169c616fa98, genmc_ctx=...) at src/eval.rs:490
+#15 0x00005dc33ffac5d5 in miri::{impl#1}::after_analysis (self=0x7ffea12574c0, tcx=...) at src/bin/miri.rs:261
+#16 0x00007169d671b033 in <rustc_interface::passes::create_and_enter_global_ctxt<core::option::Option<rustc_interface::queries::Linker>, rustc_driver_impl::run_compiler::{closure#0}::{closure#2}>::{closure#2} as core::ops::function::FnOnce<(&rustc_session::session::Session, rustc_middle::ty::context::CurrentGcx, alloc::sync::Arc<rustc_data_structures::jobserver::Proxy>, &std::sync::once_lock::OnceLock<rustc_middle::ty::context::GlobalCtxt>, &rustc_data_structures::sync::worker_local::WorkerLocal<rustc_middle::arena::Arena>, &rustc_data_structures::sync::worker_local::WorkerLocal<rustc_hir::Arena>, rustc_driver_impl::run_compiler::{closure#0}::{closure#2})>>::call_once::{shim:vtable#0} ()
+   from /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/librustc_driver-e6c51052d71b13fc.so
+#17 0x00007169d65b1b45 in rustc_interface::interface::run_compiler::<(), rustc_driver_impl::run_compiler::{closure#0}>::{closure#1} ()
+   from /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/librustc_driver-e6c51052d71b13fc.so
+#18 0x00007169d6518bca in std::sys::backtrace::__rust_begin_short_backtrace::<rustc_interface::util::run_in_thread_with_globals<rustc_interface::util::run_in_thread_pool_with_globals<rustc_interface::interface::run_compiler<(), rustc_driver_impl::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()> () from /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/librustc_driver-e6c51052d71b13fc.so
+#19 0x00007169d651899d in <std::thread::lifecycle::spawn_unchecked<rustc_interface::util::run_in_thread_with_globals<rustc_interface::util::run_in_thread_pool_with_globals<rustc_interface::interface::run_compiler<(), rustc_driver_impl::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} ()
+   from /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/librustc_driver-e6c51052d71b13fc.so
+#20 0x00007169d6516ab8 in <std::sys::thread::unix::Thread>::new::thread_start ()
+   from /root/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/lib/librustc_driver-e6c51052d71b13fc.so
+#21 0x00007169d028aaa4 in ?? () from /lib/x86_64-linux-gnu/libc.so.6
+#22 0x00007169d0317c6c in ?? () from /lib/x86_64-linux-gnu/libc.so.6
