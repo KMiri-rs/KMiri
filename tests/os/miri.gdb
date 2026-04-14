@@ -15,5 +15,5 @@ handle SIGCHLD nostop noprint pass
 
 # Register the `hi` command.
 source miri.py
-miri
+miri run
 

@@ -29,10 +29,8 @@ class Miri(gdb.Command):
         gdb.events.selected_context.connect(self.on_selected_context)
 
     def invoke(self, arg, from_tty):
-        # printInferior("invoke")
-
-        # The entry point.
-        if not arg:
+        # The entry point `miri run` in GDB.
+        if arg == ARG_RUN:
             gdb.execute("catch exec")
             gdb.execute("run")
             return
@@ -45,13 +43,15 @@ class Miri(gdb.Command):
             return
         
         if arg == ARG_SET_BREAKPOINTS:
-            gdb.execute("break miri::main")
-            gdb.execute("break miri::eval::create_ecx")
+            gdb.execute("source breakpoints.gdb")
             return
 
-        if arg == ARG_RUN:
+        # Just run `miri` in GDB to start debuging.
+        if not arg:
             gdb.execute(f"{CMD} {ARG_DISCONNECT}")
             gdb.execute(f"{CMD} {ARG_SET_BREAKPOINTS}")
+            gdb.execute("source dash.gdb")
+            gdb.execute("continue")
 
     def complete(self, text, word):
         word = word or ""
@@ -62,6 +62,7 @@ class Miri(gdb.Command):
         cmdline = CmdLine.new(gdb.selected_inferior().pid)
         if cmdline.is_miri_interested("os_osdk_bin"):
             print(f"😎 Reached miri: {pp(cmdline)}")
+            gdb.execute("miri")
             return 
         try:
             gdb.execute("continue")
