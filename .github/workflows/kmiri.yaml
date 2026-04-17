@@ -58,3 +58,7 @@ jobs:
           VDSO_LIBRARY_DIR: $GITHUB_WORKSPACE/env/linux_vdso
           RUSTFLAGS: --cfg=miri
         run: echo $VDSO_LIBRARY_DIR && make test
+
+      - name: make check-ostd
+        working-directory: asterinas
+        run: make check-ostd

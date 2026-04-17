@@ -1,0 +1,10 @@
+[package]
+name = "os"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies.ostd]
+path = "../../asterinas/ostd"
+
+[workspace]
+exclude = ["target/osdk/base", "target/osdk/test-base"]

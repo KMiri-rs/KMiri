@@ -1,0 +1,16 @@
+name: GDB
+
+on:
+  push:
+
+jobs:
+  GDB:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build GDB Image
+        run: podman build -t gdb tool/gdb
+
+      - name: Run GDB container
+        run: podman run -it localhost/gdb gdb --version
