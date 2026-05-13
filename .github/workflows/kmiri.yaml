@@ -51,6 +51,9 @@ jobs:
           git config --global --add safe.directory /__w/KMiri/KMiri
           git config --global --add safe.directory '*'
 
+      - name: Check out asterinas
+        run: git submodule update --init asterinas
+
       - name: make check
         working-directory: asterinas
         env:
