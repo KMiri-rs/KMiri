@@ -49,13 +49,9 @@ jobs:
           git config --global --add safe.directory /__w/KMiri/KMiri
           git config --global --add safe.directory '*'
 
-      - name: Check out asterinas
-        run: git submodule update --init asterinas env/linux_vdso
-
       - name: make check
         working-directory: asterinas
         env:
-          VDSO_LIBRARY_DIR: $GITHUB_WORKSPACE/env/linux_vdso
           RUSTFLAGS: --cfg=miri
         run: echo $VDSO_LIBRARY_DIR && make test
 
