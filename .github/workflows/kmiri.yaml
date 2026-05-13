@@ -8,6 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: true
 
       - name: Install toolchain
         run: rustc -V
@@ -18,15 +20,15 @@ jobs:
           ls -alh $(rustc --print=sysroot)/bin/*miri
           cargo miri --version
 
-      - name: Checkout kmiri
-        run: git submodule update --init kmiri
-
-      - name: Install kmiri
-        working-directory: kmiri
+      - name: Install kmiri & osdk
         run: |
-          ./miri install
-          ls -alh $(rustc --print=sysroot)/bin/*miri
+          ./tool/install_miri_osdk.sh
           cargo miri --version
+          cargo osdk --version
+
+      - name: Run kmiri on tests/os
+        working-directory: tests/os
+        run: OSDK_LOCAL_DEV=1 cargo osdk miri test
 
   Asterinas:
     runs-on: ubuntu-latest
