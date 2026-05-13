@@ -3,6 +3,12 @@ name: KMiri
 on:
   push:
 
+env:
+  # Use local version of ostd and other asterinas crates.
+  OSDK_LOCAL_DEV: 1
+  # OVMF firmware path in the docker container.
+  OVMF_FD: /root/ovmf/release/OVMF.fd
+
 jobs:
   KMiri:
     runs-on: ubuntu-latest
@@ -28,7 +34,7 @@ jobs:
 
       - name: Run kmiri on tests/os
         working-directory: tests/os
-        run: OSDK_LOCAL_DEV=1 cargo osdk miri test
+        run: cargo osdk miri test
 
   Asterinas:
     runs-on: ubuntu-latest
@@ -60,14 +66,16 @@ jobs:
           RUSTFLAGS: --cfg=miri
         run: echo $VDSO_LIBRARY_DIR && make test
 
-      - name: make check-ostd
+      - name: Install osdk
         working-directory: asterinas
-        run: make check-ostd
+        run: make check-ostd && make install_osdk
 
-      - name: Find OVMF.fd
-        run: sudo find / -name "OVMF*"
+      - name: Check OVMF
+        run: echo $OVMF_FD
 
       - name: Run tests/os
         working-directory: tests/os
-        continue-on-error: true
-        run: OSDK_LOCAL_DEV=1 OVMF=/usr/share/ovmf/OVMF.fd cargo osdk run
+        run: |
+          sed -i "s|\$OVMF_FD|$OVMF_FD|g" OSDK.toml
+          cat OSDK.toml
+          cargo osdk run
