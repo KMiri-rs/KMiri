@@ -63,3 +63,11 @@ jobs:
       - name: make check-ostd
         working-directory: asterinas
         run: make check-ostd
+
+      - name: Find OVMF.fd
+        run: sudo find / -name "OVMF*"
+
+      - name: Run tests/os
+        working-directory: tests/os
+        continue-on-error: true
+        run: OSDK_LOCAL_DEV=1 OVMF=/usr/share/ovmf/OVMF.fd cargo osdk run
