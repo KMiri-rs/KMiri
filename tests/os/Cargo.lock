@@ -182,13 +182,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "init"
-version = "0.1.0"
-dependencies = [
- "ostd",
-]
-
-[[package]]
 name = "int-to-c-enum"
 version = "0.1.0"
 dependencies = [
@@ -297,6 +290,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "os"
+version = "0.1.0"
+dependencies = [
+ "ostd",
 ]
 
 [[package]]

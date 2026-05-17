@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       # Environment required by Asterinas.
-      image: asterinas/asterinas:0.17.0-20260114
+      image: asterinas/asterinas:0.17.2-20260508
       options: --device=/dev/kvm --privileged
       volumes:
         # Map the following directories on the host into the container so that
