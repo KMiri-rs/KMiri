@@ -4,6 +4,7 @@ from typing import Dict
 from pprint import pp
 import textwrap
 import gdb
+import os
 
 @dataclass
 class ProcessStatus:
@@ -15,6 +16,7 @@ CMD = "miri"
 ARG_RUN = "run"
 ARG_DISCONNECT = "disconnect"
 ARG_SET_BREAKPOINTS = "set-breakpoints"
+BREAKPOINTS_GDB = "breakpoints.gdb"
 
 class Miri(gdb.Command):
     def __init__(self):
@@ -41,9 +43,9 @@ class Miri(gdb.Command):
             gdb.events.exited.disconnect(self.exit_handler)
             gdb.events.selected_context.disconnect(self.on_selected_context)
             return
-        
-        if arg == ARG_SET_BREAKPOINTS:
-            gdb.execute("source breakpoints.gdb")
+
+        if arg == ARG_SET_BREAKPOINTS and os.path.exists(BREAKPOINTS_GDB):
+            gdb.execute(f"source {BREAKPOINTS_GDB}")
             return
 
         # Just run `miri` in GDB to start debuging.
@@ -155,7 +157,8 @@ class Miri(gdb.Command):
             return num if cargo_miri and (num := max(cargo_miri)) else None
 
     def on_selected_context(self, event):
-        print(f"[on_selected_context] current inferior: {event.inferior.num}, thread: {event.thread.num} frame: {event.frame.name}")
+        name = event.frame.name if event.frame else "Unknown frame"
+        print(f"[on_selected_context] current inferior: {event.inferior.num}, thread: {event.thread.num} frame: {name}")
         self.run_continue()
 
 def filename(inf) -> str:

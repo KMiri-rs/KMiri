@@ -12,12 +12,12 @@
 # b src/alloc_addresses/mod.rs:250
 
 # eval_entry
-b src/eval.rs:489
+b src/eval.rs:472
 
 # schedule
-b src/concurrency/thread.rs:849
+# b src/concurrency/thread.rs:849
 
-b miri::borrow_tracker::AllocState::before_memory_deallocation
+# b miri::borrow_tracker::AllocState::before_memory_deallocation
 
 # b src/shims/os_str.rs:76
 # b src/alloc_addresses/mod.rs:739
