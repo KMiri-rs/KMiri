@@ -14,6 +14,5 @@ handle SIGUSR1 noprint nostop pass
 handle SIGCHLD nostop noprint pass
 
 # Register the `hi` command.
-source miri.py
+source ./../../tool/gdb/miri.py
 miri run
-

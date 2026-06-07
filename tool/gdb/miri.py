@@ -16,7 +16,11 @@ CMD = "miri"
 ARG_RUN = "run"
 ARG_DISCONNECT = "disconnect"
 ARG_SET_BREAKPOINTS = "set-breakpoints"
+
+CWD = os.path.abspath("../../tool/gdb/")
 BREAKPOINTS_GDB = "breakpoints.gdb"
+BREAKPOINTS_GDB_FALLBACK = os.path.join(CWD, BREAKPOINTS_GDB)
+DASH_GDB = os.path.join(CWD, "dash.gdb")
 
 class Miri(gdb.Command):
     def __init__(self):
@@ -44,15 +48,18 @@ class Miri(gdb.Command):
             gdb.events.selected_context.disconnect(self.on_selected_context)
             return
 
-        if arg == ARG_SET_BREAKPOINTS and os.path.exists(BREAKPOINTS_GDB):
-            gdb.execute(f"source {BREAKPOINTS_GDB}")
+        if arg == ARG_SET_BREAKPOINTS:
+            if os.path.exists(BREAKPOINTS_GDB):
+                gdb.execute(f"source {BREAKPOINTS_GDB}")
+            elif os.path.exists(BREAKPOINTS_GDB_FALLBACK):
+                gdb.execute(f"source {BREAKPOINTS_GDB_FALLBACK}")
             return
 
         # Just run `miri` in GDB to start debuging.
         if not arg:
             gdb.execute(f"{CMD} {ARG_DISCONNECT}")
             gdb.execute(f"{CMD} {ARG_SET_BREAKPOINTS}")
-            gdb.execute("source dash.gdb")
+            gdb.execute(f"source {DASH_GDB}")
             gdb.execute("continue")
 
     def complete(self, text, word):
