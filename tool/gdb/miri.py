@@ -24,6 +24,7 @@ DASH_GDB = os.path.join(CWD, "dash.gdb")
 
 class Miri(gdb.Command):
     def __init__(self):
+        print("[miri] __init__")
         # The command name is `miri`.
         super().__init__(CMD, gdb.COMMAND_USER)
         # inferior number as the key and parent
@@ -35,8 +36,10 @@ class Miri(gdb.Command):
         gdb.events.selected_context.connect(self.on_selected_context)
 
     def invoke(self, arg, from_tty):
+        print("[miri] invoke")
         # The entry point `miri run` in GDB.
         if arg == ARG_RUN:
+            print("[miri] run")
             gdb.execute("catch exec")
             gdb.execute("run")
             return
@@ -53,10 +56,12 @@ class Miri(gdb.Command):
                 gdb.execute(f"source {BREAKPOINTS_GDB}")
             elif os.path.exists(BREAKPOINTS_GDB_FALLBACK):
                 gdb.execute(f"source {BREAKPOINTS_GDB_FALLBACK}")
+                print(f"source {BREAKPOINTS_GDB_FALLBACK}")
             return
 
         # Just run `miri` in GDB to start debuging.
         if not arg:
+            print("[miri] entry")
             gdb.execute(f"{CMD} {ARG_DISCONNECT}")
             gdb.execute(f"{CMD} {ARG_SET_BREAKPOINTS}")
             gdb.execute(f"source {DASH_GDB}")
@@ -69,7 +74,7 @@ class Miri(gdb.Command):
 
     def run_continue(self):
         cmdline = CmdLine.new(gdb.selected_inferior().pid)
-        if cmdline.is_miri_interested("os_osdk_bin"):
+        if cmdline.is_miri_interested():
             print(f"😎 Reached miri: {pp(cmdline)}")
             gdb.execute("miri")
             return 
@@ -177,12 +182,18 @@ def printInferior(s):
     pid = inf.pid
     print(f"[inferior={num} pid={pid}] [{s}] {filename(inf)}")
 
+# "current project dir name" + "_osdk_bin"
+def crate_bin_name():
+    dir = os.path.basename(os.path.abspath("."))
+    return dir + "_osdk_bin"
+
 # cat /proc/2850975/cmdline | xargs -0
 # `/home/gh-zjp-CN/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/cargo-miri runner /home/gh-zjp-CN/KMiri/tests/os/target/miri/x86_64-unknown-linux-gnu/debug/os-osdk-bin`
 @dataclass
 class CmdLine:
     cmdline: str
     exe: str
+    crate_bin: str
 
     @classmethod
     def new(cls, pid: int) -> CmdLine | None:
@@ -200,12 +211,14 @@ class CmdLine:
             print(e)
             return None
 
-        return cls(cmdline, exe=cmdline.split(" ")[0].strip())
+        crate_bin = crate_bin_name()
+        print(f"crate_bin = {crate_bin}")
+        return cls(cmdline, cmdline.split(" ")[0].strip(), crate_bin)
 
-    def is_miri_interested(self, crate: str) -> bool:
+    def is_miri_interested(self) -> bool:
         # /home/gh-zjp-CN/.rustup/toolchains/nightly-2025-12-06-x86_64-unknown-linux-gnu/bin/miri --sysroot /home/gh-zjp-CN/.cache/miri
         # --crate-name os_osdk_bin ...
-        return self.is_miri() and crate in self.cmdline
+        return self.is_miri() and self.crate_bin in self.cmdline
 
     def is_miri(self) -> bool:
         return self.exe.endswith("/miri")
