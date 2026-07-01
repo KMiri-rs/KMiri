@@ -11,7 +11,7 @@ dash assembly -style highlight-line True
 dash variables -style align True
 dash variables -style compact False
 dash variables -style sort True
-dash -enabled on
+dash -enabled off
 
 # 设置汇编语法
 set disassembly-flavor intel
