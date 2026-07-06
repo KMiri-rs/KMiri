@@ -23,11 +23,18 @@ fn main() {
 
     let args = std::env::args().collect::<Vec<_>>();
 
-    if args.len() == 2 && args[1].as_str() == "-vV" {
+    if args
+        .iter()
+        .any(|arg| matches!(&**arg, "-vV" | "-Vv" | "-V" | "--version"))
+    {
         // cargo invokes `rustc -vV` first
-        state.spawn("rustc", &["-vV".to_owned()], &[]);
-    } else if args.iter().any(|arg| arg == "___") {
-        // then cargo asks rustc via fake `--crate-name ___` to know compilation specifics
+        state.spawn("rustc", &args[1..], &[]);
+    } else if args
+        .iter()
+        .any(|arg| matches!(&**arg, "___" | "build-script-build" | "proc_macro"))
+    {
+        // cargo asks rustc via fake `--crate-name ___` to know compilation specifics;
+        // don't analyze build.rs or proc_macro crates
         state.spawn("rustc", &args[1..], &[]);
     } else if subprocess {
         // cargo constructs full rustc arguments and forwards them to us,
@@ -117,11 +124,15 @@ impl ProcessState {
 
     /// Spawn a subprocess.
     fn spawn(&self, cmd: &str, args: &[String], vars: &[(&str, &str)]) {
-        let status = Command::new(cmd)
+        let mut cmd = Command::new(cmd);
+
+        // state related
+        cmd.env(ENV_INNER_SUBPROCESS, "1")
+            .env(ENV_INNER_DIR_TARGET, &self.dir_target);
+
+        let status = cmd
             .args(args)
             .envs(vars.iter().copied())
-            .env(ENV_INNER_SUBPROCESS, "1")
-            .env(ENV_INNER_DIR_TARGET, &self.dir_target)
             .stdout(io::stdout())
             .stderr(io::stderr())
             .spawn()
