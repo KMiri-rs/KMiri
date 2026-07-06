@@ -1,9 +1,9 @@
 #![feature(rustc_private)]
 
-use std::ops::ControlFlow;
-
+use kmiri_helper::*;
 use rustc_middle::ty::TyCtxt;
 use rustc_public::{CrateDef, local_crate, mir::MirVisitor};
+use std::{ops::ControlFlow, path::Path};
 
 extern crate rustc_data_structures;
 extern crate rustc_driver;
@@ -36,11 +36,13 @@ fn analysis(tcx: TyCtxt) -> ControlFlow<()> {
         }
     }
     let mut v_fn = collector.into_info();
-    kmiri_helper::dedup(&mut v_fn);
+    dedup(&mut v_fn);
 
-    let dir = std::env::var("DIR_ANALYSIS").unwrap();
-    _ = std::fs::create_dir(&dir);
-    let file = std::fs::File::create(format!("{dir}/{}.json", krate.name)).unwrap();
+    let dir_target = std::env::var(kmiri_helper::ENV_INNER_DIR_TARGET).unwrap();
+    let dir_analysis = Path::new(&dir_target).join(kmiri_helper::ANALYSIS);
+    _ = std::fs::create_dir(dbg!(&dir_analysis));
+    let json_path = dir_analysis.join(format!("{}.json", krate.name));
+    let file = std::fs::File::create(dbg!(json_path)).unwrap();
     serde_json::to_writer_pretty(file, &v_fn).unwrap();
 
     ControlFlow::Continue(())

@@ -51,3 +51,8 @@ fn dedup_fn() {
         ]
     );
 }
+
+pub const ENV_INNER_DIR_TARGET: &str = "__KMIRI_DIR_TARGET";
+pub const ANALYSIS: &str = "analysis";
+pub const ANALYSIS_LOG: &str = "analysis.log";
+pub const ANALYSIS_JSON: &str = "analysis.json";
