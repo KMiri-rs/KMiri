@@ -157,9 +157,17 @@ impl ProcessState {
 
 /// Remove a file or directory silently.
 fn rm(path: &PathBuf) {
-    match fs::remove_file(path) {
-        Ok(()) => (),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => (),
-        Err(err) => panic!("Failed to remove {path:?}: {err}"),
+    let result = if path.is_file() {
+        fs::remove_file(path)
+    } else if path.is_dir() {
+        fs::remove_dir_all(path)
+    } else if !path.exists() {
+        // Do nothing.
+        return;
+    } else {
+        unimplemented!()
+    };
+    if let Err(err) = result {
+        panic!("Failed to remove {path:?}: {err}")
     }
 }
