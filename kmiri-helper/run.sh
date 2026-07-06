@@ -8,7 +8,7 @@ export LD_LIBRARY_PATH=$(rustc --print=sysroot)/lib
 export LOG_FILE=$PWD/cargo-kmiri-helper.log
 export DIR_ANALYSIS=$PWD/analysis
 
-rm "$LOG_FILE"
+rm "$LOG_FILE" -f
 touch "$LOG_FILE"
 cargo clean
 

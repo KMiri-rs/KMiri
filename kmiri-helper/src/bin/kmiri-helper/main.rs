@@ -18,12 +18,12 @@ fn main() {
     rustc_public::run_with_tcx!(&args, analysis).unwrap();
 }
 
-fn analysis(_tcx: TyCtxt) -> ControlFlow<()> {
+fn analysis(tcx: TyCtxt) -> ControlFlow<()> {
     let krate = local_crate();
     dbg!(&krate.name);
     let fn_defs = krate.fn_defs();
 
-    let mut collector = info::CollectInstance::default();
+    let mut collector = info::CollectInstance::new(tcx);
     for fn_def in fn_defs {
         if let Some(body) = fn_def.body() {
             collector.visit_body(&body);
