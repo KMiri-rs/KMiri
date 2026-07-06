@@ -3,13 +3,14 @@
 use std::ops::ControlFlow;
 
 use rustc_middle::ty::TyCtxt;
-use rustc_public::{local_crate, mir::MirVisitor};
+use rustc_public::{CrateDef, local_crate, mir::MirVisitor};
 
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_interface;
 extern crate rustc_middle;
 extern crate rustc_public;
+extern crate rustc_span;
 
 mod info;
 
@@ -25,12 +26,17 @@ fn analysis(tcx: TyCtxt) -> ControlFlow<()> {
 
     let mut collector = info::CollectInstance::new(tcx);
     for fn_def in fn_defs {
-        if let Some(body) = fn_def.body() {
+        // Start from all non-generic functions to find monomorphized instances.
+        let def_id = rustc_public::rustc_internal::internal(tcx, fn_def.def_id());
+        let generics = tcx.generics_of(def_id);
+        if !generics.requires_monomorphization(tcx)
+            && let Some(body) = fn_def.body()
+        {
             collector.visit_body(&body);
         }
     }
     let mut v_fn = collector.into_info();
-    v_fn.sort_unstable();
+    kmiri_helper::dedup(&mut v_fn);
 
     let dir = std::env::var("DIR_ANALYSIS").unwrap();
     _ = std::fs::create_dir(&dir);

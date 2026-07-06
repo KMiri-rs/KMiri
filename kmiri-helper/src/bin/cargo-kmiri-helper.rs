@@ -71,18 +71,18 @@ fn run(cmd: &str, args: &[String], vars: &[(&str, &str)]) {
 
 fn merge_analysis() {
     let dir_analysis = std::env::var("DIR_ANALYSIS").unwrap();
-    let mut functions: Vec<FunctionInstanceInfo> = std::fs::read_dir(dir_analysis)
+    let mut v_fn: Vec<FunctionInstanceInfo> = std::fs::read_dir(dir_analysis)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension() == Some("json".as_ref()))
         .flat_map(|path| {
             serde_json::from_reader::<_, Vec<FunctionInstanceInfo>>(
-                &std::fs::File::open(path).unwrap(),
+                &std::fs::File::open(dbg!(path)).unwrap(),
             )
             .unwrap()
         })
         .collect();
-    functions.sort_unstable();
+    kmiri_helper::dedup(&mut v_fn);
     let out = std::fs::File::create("analysis.json").unwrap();
-    serde_json::to_writer_pretty(out, &functions).unwrap();
+    serde_json::to_writer_pretty(out, &v_fn).unwrap();
 }
