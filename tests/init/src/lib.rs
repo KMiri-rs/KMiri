@@ -1,5 +1,6 @@
 #![no_std]
 #![deny(unsafe_code)]
+#![feature(format_args_nl)]
 
 extern crate alloc;
 use ostd::prelude::*;

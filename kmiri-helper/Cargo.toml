@@ -1,0 +1,16 @@
+[package]
+name = "kmiri-helper"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1.0" }
+log = { version = "0.4", optional = true }
+env_logger = { version = "0.11", optional = true }
+
+[features]
+default = ["dep:log", "dep:env_logger"]
+
+[package.metadata.rust-analyzer]
+rustc_private = true
