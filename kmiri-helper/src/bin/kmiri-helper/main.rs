@@ -1,8 +1,8 @@
 #![feature(rustc_private)]
 
 use kmiri_helper::*;
-use rustc_middle::ty::TyCtxt;
-use rustc_public::{CrateDef, local_crate, mir::MirVisitor};
+use rustc_middle::{mir::visit::Visitor, ty::TyCtxt};
+use rustc_public::{CrateDef, local_crate};
 use std::{ops::ControlFlow, path::Path};
 
 extern crate rustc_data_structures;
@@ -29,10 +29,14 @@ fn analysis(tcx: TyCtxt) -> ControlFlow<()> {
         // Start from all non-generic functions to find monomorphized instances.
         let def_id = rustc_public::rustc_internal::internal(tcx, fn_def.def_id());
         let generics = tcx.generics_of(def_id);
-        if !generics.requires_monomorphization(tcx)
-            && let Some(body) = fn_def.body()
-        {
-            collector.visit_body(&body);
+        if !generics.requires_monomorphization(tcx) {
+            if let Some(local_def_id) = def_id.as_local()
+                && tcx.hir_maybe_body_owned_by(local_def_id).is_none()
+            {
+                continue;
+            }
+            let body = tcx.instance_mir(rustc_middle::ty::InstanceKind::Item(def_id));
+            collector.visit_body(body);
         }
     }
     let mut v_fn = collector.into_info();

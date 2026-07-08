@@ -1,17 +1,15 @@
 use kmiri_helper::FunctionInstanceInfo;
 use rustc_data_structures::fx::FxHashSet;
-use rustc_middle::ty::{Instance, TyCtxt};
-use rustc_public::{
-    CrateDef,
-    mir::{MirVisitor, visit::Location},
-    rustc_internal::internal,
-    ty::{FnDef, GenericArgs, RigidTy, Ty},
+use rustc_middle::ty::print::{with_no_trimmed_paths, with_resolve_crate_name};
+use rustc_middle::{
+    mir::visit::{TyContext, Visitor},
+    ty::{Instance, Ty, TyCtxt, TyKind, TypingEnv},
 };
 use rustc_span::{BytePos, FileName, RealFileName, Span, source_map::SourceMap};
 
 fn new_info<'tcx>(instance: Instance<'tcx>, tcx: TyCtxt<'tcx>) -> FunctionInstanceInfo {
     let def_id = instance.def_id();
-    let name = tcx.def_path_str(def_id);
+    let name = with_no_trimmed_paths!(with_resolve_crate_name!(tcx.def_path_str(def_id)));
 
     let span = if let Some(local_def_id) = def_id.as_local() {
         let hir_id = tcx.local_def_id_to_hir_id(local_def_id);
@@ -53,14 +51,23 @@ pub fn pos_to_line_nr(sm: &SourceMap, pos: BytePos) -> u16 {
 }
 
 pub struct CollectInstance<'tcx> {
-    pub fn_def: FxHashSet<(FnDef, GenericArgs)>,
+    pub fn_def: FxHashSet<Instance<'tcx>>,
     pub tcx: TyCtxt<'tcx>,
 }
 
-impl MirVisitor for CollectInstance<'_> {
-    fn visit_ty(&mut self, ty: &Ty, _: Location) {
-        if let Some(RigidTy::FnDef(fn_def, args)) = ty.kind().rigid() {
-            self.fn_def.insert((*fn_def, args.clone()));
+impl<'tcx> Visitor<'tcx> for CollectInstance<'tcx> {
+    fn visit_ty(&mut self, ty: Ty<'tcx>, _: TyContext) {
+        if let TyKind::FnDef(def_id, args) = ty.kind() {
+            // resolve an instance
+            // let typing_env = rustc_middle::ty::TypingEnv::fully_monomorphized();
+            let typing_env = TypingEnv::post_analysis(self.tcx, *def_id);
+
+            if let Ok(args) = self.tcx.try_normalize_erasing_regions(typing_env, *args)
+                && let Ok(Some(instance)) =
+                    Instance::try_resolve(self.tcx, typing_env, *def_id, args)
+            {
+                self.fn_def.insert(instance);
+            }
         }
         self.super_ty(ty);
     }
@@ -76,20 +83,8 @@ impl<'tcx> CollectInstance<'tcx> {
 
     pub fn into_info(self) -> Vec<FunctionInstanceInfo> {
         let mut v_fn_info = Vec::with_capacity(dbg!(self.fn_def.len()));
-        for (fn_def, args) in self.fn_def {
-            let def_id = internal(self.tcx, fn_def.def_id());
-
-            // resolve an instance
-            // let typing_env = rustc_middle::ty::TypingEnv::fully_monomorphized();
-            let typing_env = rustc_middle::ty::TypingEnv::post_analysis(self.tcx, def_id);
-
-            let args = internal(self.tcx, args);
-            if let Ok(args) = self.tcx.try_normalize_erasing_regions(typing_env, args)
-                && let Ok(Some(instance)) =
-                    rustc_middle::ty::Instance::try_resolve(self.tcx, typing_env, def_id, args)
-            {
-                v_fn_info.push(new_info(instance, self.tcx));
-            }
+        for instance in self.fn_def {
+            v_fn_info.push(new_info(instance, self.tcx));
         }
         v_fn_info
     }

@@ -31,7 +31,7 @@ fn main() {
         state.spawn("rustc", &args[1..], &[]);
     } else if args
         .iter()
-        .any(|arg| matches!(&**arg, "___" | "build-script-build" | "proc_macro"))
+        .any(|arg| matches!(&**arg, "___" | "build_script_build" | "proc_macro"))
     {
         // cargo asks rustc via fake `--crate-name ___` to know compilation specifics;
         // don't analyze build.rs or proc_macro crates
