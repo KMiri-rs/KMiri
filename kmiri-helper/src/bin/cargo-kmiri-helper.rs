@@ -1,5 +1,11 @@
+use itertools::Itertools;
 use kmiri_helper::*;
-use std::{env, fs, io, path::PathBuf, process::Command};
+use std::{
+    env, fs,
+    io::{self, ErrorKind},
+    path::PathBuf,
+    process::Command,
+};
 
 const RUSTC_WRAPPER: &str = "kmiri-helper";
 const CARGO_WRAPPER: &str = "cargo-kmiri-helper";
@@ -52,6 +58,7 @@ fn main() {
         } else {
             unimplemented!("Need to support this case: {args:#?}")
         }
+        state.recreate_dir_analysis();
         state.spawn("cargo", &args, &[("RUSTC", cargo_wrapper)]);
         state.merge_analysis();
     }
@@ -145,12 +152,25 @@ impl ProcessState {
         }
     }
 
+    /// Remove old json files.
+    fn recreate_dir_analysis(&self) {
+        let dir_analysis = &self.dir_analysis;
+        if let Err(err) = std::fs::remove_dir_all(dir_analysis)
+            && err.kind() != ErrorKind::NotFound
+        {
+            panic!("Directory {dir_analysis:?} can't be removed.")
+        }
+        std::fs::create_dir(dir_analysis).unwrap();
+    }
+
     /// Merge all analysis json files.
     fn merge_analysis(&self) {
-        let mut v_fn: Vec<FunctionInstanceInfo> = fs::read_dir(&self.dir_analysis)
+        let v_fn: Vec<FunctionInstanceInfo> = fs::read_dir(&self.dir_analysis)
             .unwrap()
             .map(|entry| entry.unwrap().path())
             .filter(|path| path.extension() == Some("json".as_ref()))
+            .sorted()
+            .dedup()
             .flat_map(|path| {
                 serde_json::from_reader::<_, Vec<FunctionInstanceInfo>>(
                     &fs::File::open(dbg!(path)).unwrap(),
@@ -158,8 +178,6 @@ impl ProcessState {
                 .unwrap()
             })
             .collect();
-        dedup(&mut v_fn);
-        v_fn.sort_unstable(); // sort in alphabet order
 
         let out = fs::File::create(self.dir_target.join(ANALYSIS_JSON)).unwrap();
         serde_json::to_writer_pretty(out, &v_fn).unwrap();
