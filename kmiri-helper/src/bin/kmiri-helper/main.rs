@@ -2,7 +2,7 @@
 
 use kmiri_helper::*;
 use rustc_middle::{mir::visit::Visitor, ty::TyCtxt};
-use rustc_public::{CrateDef, local_crate};
+use rustc_public::{CrateDef, local_crate, rustc_internal::internal};
 use std::{ops::ControlFlow, path::Path};
 
 extern crate rustc_data_structures;
@@ -27,7 +27,7 @@ fn analysis(tcx: TyCtxt) -> ControlFlow<()> {
     let mut collector = info::CollectInstance::new(tcx);
     for fn_def in fn_defs {
         // Start from all non-generic functions to find monomorphized instances.
-        let def_id = rustc_public::rustc_internal::internal(tcx, fn_def.def_id());
+        let def_id = internal(tcx, fn_def.def_id());
         let generics = tcx.generics_of(def_id);
         if !generics.requires_monomorphization(tcx) {
             if let Some(local_def_id) = def_id.as_local()
@@ -44,8 +44,8 @@ fn analysis(tcx: TyCtxt) -> ControlFlow<()> {
 
     let dir_target = std::env::var(kmiri_helper::ENV_INNER_DIR_TARGET).unwrap();
     let dir_analysis = Path::new(&dir_target).join(kmiri_helper::ANALYSIS);
-    _ = std::fs::create_dir(dbg!(&dir_analysis));
-    let json_path = dir_analysis.join(format!("{}.json", krate.name));
+    let crate_hash = tcx.crate_hash(internal(tcx, krate.id));
+    let json_path = dir_analysis.join(format!("{}_{crate_hash}.json", krate.name));
     let file = std::fs::File::create(dbg!(json_path)).unwrap();
     serde_json::to_writer_pretty(file, &v_fn).unwrap();
 
