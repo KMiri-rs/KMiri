@@ -1,14 +1,13 @@
 use kmiri_helper::FunctionInstanceInfo;
-use rustc_data_structures::fx::FxHashSet;
+use rustc_middle::ty::TyCtxt;
 use rustc_middle::ty::print::{with_no_trimmed_paths, with_resolve_crate_name};
-use rustc_middle::{
-    mir::visit::{TyContext, Visitor},
-    ty::{Instance, Ty, TyCtxt, TyKind, TypingEnv},
-};
+use rustc_public::CrateDef;
+use rustc_public::mir::mono::Instance;
+use rustc_public::rustc_internal::internal;
 use rustc_span::{BytePos, FileName, RealFileName, Span, source_map::SourceMap};
 
-fn new_info<'tcx>(instance: Instance<'tcx>, tcx: TyCtxt<'tcx>) -> FunctionInstanceInfo {
-    let def_id = instance.def_id();
+pub fn new<'tcx>(instance: Instance, tcx: TyCtxt<'tcx>) -> FunctionInstanceInfo {
+    let def_id = internal(tcx, instance.def.def_id());
     let name = with_no_trimmed_paths!(with_resolve_crate_name!(tcx.def_path_str(def_id)));
 
     let span = if let Some(local_def_id) = def_id.as_local() {
@@ -48,44 +47,4 @@ pub fn source_file(sm: &SourceMap, span: Span) -> String {
 pub fn pos_to_line_nr(sm: &SourceMap, pos: BytePos) -> u16 {
     let loc = sm.lookup_char_pos(pos);
     u16::try_from(loc.line).unwrap_or(0)
-}
-
-pub struct CollectInstance<'tcx> {
-    pub fn_def: FxHashSet<Instance<'tcx>>,
-    pub tcx: TyCtxt<'tcx>,
-}
-
-impl<'tcx> Visitor<'tcx> for CollectInstance<'tcx> {
-    fn visit_ty(&mut self, ty: Ty<'tcx>, _: TyContext) {
-        if let TyKind::FnDef(def_id, args) = ty.kind() {
-            // resolve an instance
-            // let typing_env = rustc_middle::ty::TypingEnv::fully_monomorphized();
-            let typing_env = TypingEnv::post_analysis(self.tcx, *def_id);
-
-            if let Ok(args) = self.tcx.try_normalize_erasing_regions(typing_env, *args)
-                && let Ok(Some(instance)) =
-                    Instance::try_resolve(self.tcx, typing_env, *def_id, args)
-            {
-                self.fn_def.insert(instance);
-            }
-        }
-        self.super_ty(ty);
-    }
-}
-
-impl<'tcx> CollectInstance<'tcx> {
-    pub fn new(tcx: TyCtxt<'tcx>) -> Self {
-        CollectInstance {
-            fn_def: FxHashSet::default(),
-            tcx,
-        }
-    }
-
-    pub fn into_info(self) -> Vec<FunctionInstanceInfo> {
-        let mut v_fn_info = Vec::with_capacity(dbg!(self.fn_def.len()));
-        for instance in self.fn_def {
-            v_fn_info.push(new_info(instance, self.tcx));
-        }
-        v_fn_info
-    }
 }
