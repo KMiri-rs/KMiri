@@ -198,3 +198,14 @@ kmiri is experimental and tied closely to Rust nightly, Miri internals, Asterina
 - A current limitation of Miri.
 
 kmiri is useful as a development-time checker for kernel unsafe abstractions. It is not a complete machine emulator, does not execute assembly, does not emulate devices like QEMU, and does not prove paths that were not run.
+
+## License And Credits
+
+This repository combines and modifies components from Miri and Asterinas. Each component follows the license of its upstream project:
+
+- Code derived from **Miri** follows Miri's own license terms.
+- Code derived from **Asterinas** follows Asterinas's own license terms.
+
+The original kmiri work was created by [@cchanging](https://github.com/cchanging). It was initially part of the USENIX ATC 2025 paper [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://www.usenix.org/conference/atc25/presentation/peng-yuke).
+
+The initial implementation of the MIR debugger TUI came from [rust-lang/miri#4931](https://github.com/rust-lang/miri/pull/4931), authored by [@alaotach](https://github.com/alaotach).

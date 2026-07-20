@@ -196,3 +196,14 @@ kmiri 仍处于实验阶段，并且与 Rust nightly、Miri 内部实现、Aster
 - Miri 当前的限制。
 
 kmiri 适合作为内核 unsafe 抽象的开发期检查工具。它不是完整的机器模拟器，不执行汇编，不像 QEMU 那样模拟设备，也不会证明没有被执行到的路径。
+
+## 许可和致谢
+
+本仓库组合并修改了来自 Miri 和 Asterinas 的组件。各组件遵循其上游项目自身的许可：
+
+- 来源于 **Miri** 的代码遵循 Miri 自身的许可条款。
+- 来源于 **Asterinas** 的代码遵循 Asterinas 自身的许可条款。
+
+kmiri 的原始工作由 [@cchanging](https://github.com/cchanging) 创建，最初是 USENIX ATC 2025 论文 [Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB](https://www.usenix.org/conference/atc25/presentation/peng-yuke) 的一部分。
+
+MIR debugger TUI 的最初实现来自 [rust-lang/miri#4931](https://github.com/rust-lang/miri/pull/4931)，原作者是 [@alaotach](https://github.com/alaotach)。
