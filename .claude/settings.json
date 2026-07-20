@@ -3,9 +3,7 @@
     "deny": [
       "Read(old/**)",
       "Edit(old/**)",
-      "Write(old/**)",
       "Grep(old/**)",
-      "Glob(old/**)",
       "Bash(*old/*)"
     ]
   }
