@@ -1,9 +1,8 @@
----
-title: 'KernMiri: An Overview'
-
----
-
 # KernMiri: An Overview
+
+Author: [@cchanging](https://github.com/cchanging)
+
+Hackmd：<https://hackmd.io/bLRtlCH0T9udi9OLGrrXuQ>
 
 ## Introduction
 
