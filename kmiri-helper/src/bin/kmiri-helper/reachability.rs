@@ -327,6 +327,7 @@ impl MonoItemsFnCollector<'_, '_> {
                 !def.as_intrinsic().unwrap().must_be_overridden() && instance.has_body()
             }
             InstanceKind::Shim | InstanceKind::Item => true,
+            InstanceKind::LlvmIntrinsic => false,
         };
         if should_collect && should_codegen_locally(&instance) {
             let reason = if is_direct_call {
