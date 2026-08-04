@@ -80,7 +80,7 @@ struct ProcessState {
 impl ProcessState {
     /// Construct the state via cargo, and reset the analysis directory.
     fn main() -> Self {
-        let cmd = "cargo metadata --format-version 1 | jq .target_directory -r";
+        let cmd = "set -o pipefail; cargo metadata --format-version 1 | jq .target_directory -r";
         let output = Command::new("bash")
             .args(["-lc", cmd])
             .output()
