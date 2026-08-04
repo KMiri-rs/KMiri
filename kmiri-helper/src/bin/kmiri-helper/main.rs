@@ -42,7 +42,7 @@ fn analysis(tcx: TyCtxt) -> ControlFlow<()> {
         .collect();
     println!("{}: collected {}", krate.name, v_fn.len());
 
-    let dir_target = std::env::var(kmiri_helper::ENV_INNER_DIR_TARGET).unwrap();
+    let dir_target = std::env::var(kmiri_helper::ENV__KMIRI_DIR_TARGET).unwrap();
     let dir_analysis = Path::new(&dir_target).join(kmiri_helper::ANALYSIS);
     let crate_hash = tcx.crate_hash(internal(tcx, krate.id));
     let json_path = dir_analysis.join(format!("{}_{crate_hash}.json", krate.name));

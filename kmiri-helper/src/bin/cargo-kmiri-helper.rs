@@ -108,7 +108,7 @@ impl ProcessState {
 
     /// Construct the state via the env var.
     fn subprocess() -> Self {
-        let dir_target = PathBuf::from(env::var(ENV_INNER_DIR_TARGET).unwrap());
+        let dir_target = PathBuf::from(env::var(ENV__KMIRI_DIR_TARGET).unwrap());
         ProcessState {
             log_file: dir_target.join(ANALYSIS_LOG),
             dir_analysis: dir_target.join(ANALYSIS),
@@ -135,7 +135,7 @@ impl ProcessState {
 
         // state related
         cmd.env(ENV_INNER_SUBPROCESS, "1")
-            .env(ENV_INNER_DIR_TARGET, &self.dir_target);
+            .env(ENV__KMIRI_DIR_TARGET, &self.dir_target);
 
         let status = cmd
             .args(args)
