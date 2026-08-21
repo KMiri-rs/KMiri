@@ -1,7 +1,8 @@
 name: GDB
 
 on:
-  push:
+  workflow_dispatch:
+  # push:
 
 jobs:
   GDB:
