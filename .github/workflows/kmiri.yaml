@@ -43,7 +43,7 @@ jobs:
 
       - name: Run kmiri on tockos
         working-directory: tock/boards/qemu_rv64_virt
-        run: MIRIFLAGS="-Zkmiri-toml=kmiri.toml" cargo miri run --target riscv64imac-unknown-none-elf
+        run: MIRIFLAGS="-Zkmiri-toml=$PWD/kmiri.toml" MIRI_SYSROOT="$(rustc --print sysroot)" cargo miri run --target riscv64imac-unknown-none-elf
 
   Asterinas:
     runs-on: ubuntu-latest
