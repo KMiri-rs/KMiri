@@ -32,15 +32,24 @@ jobs:
           cargo miri --version
           cargo osdk --version
 
-      - name: Run kmiri on tests/os
-        working-directory: tests/os
-        run: cargo osdk miri test
+      # FIXME: update toolchain in osdk template
+      # - name: Run kmiri on tests/os
+      #   working-directory: tests/os
+      #   run: cargo osdk miri test
+      #
+      # - name: Run kmiri on tests/init
+      #   working-directory: tests/init
+      #   run: cargo osdk miri test
+
+      - name: Run kmiri on tockos
+        working-directory: tock/boards/qemu_rv64_virt
+        run: MIRIFLAGS="-Zkmiri-toml=$PWD/kmiri.toml" MIRI_SYSROOT="$(rustc --print sysroot)" cargo miri run --target riscv64imac-unknown-none-elf
 
   Asterinas:
     runs-on: ubuntu-latest
     container:
       # Environment required by Asterinas.
-      image: asterinas/asterinas:0.17.2-20260508
+      image: asterinas/asterinas:0.18.0-20260702
       options: --device=/dev/kvm --privileged
       volumes:
         # Map the following directories on the host into the container so that
