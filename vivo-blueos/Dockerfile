@@ -18,7 +18,13 @@ RUN wget https://github.com/dandavison/delta/releases/download/0.19.2/delta-0.19
   && mv delta-0.19.2-x86_64-unknown-linux-gnu/delta /root/.local/bin \
   && rm -rf delta-0.19.2-x86_64-unknown-linux-gnu/
 
-RUN echo "fish" >> /root/.bashrc
-
 # claude and codex are install in `~/.local/bin`
 ENV PATH="/root/.local/bin:${PATH}"
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+  && uv tool install --upgrade 'cocoindex-code[slim]' \
+  && claude mcp add cocoindex-code -- ccc mcp \
+  && codex mcp add cocoindex-code -- ccc mcp
+
+RUN echo "fish" >> /root/.bashrc
+
