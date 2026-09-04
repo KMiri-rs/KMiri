@@ -1,0 +1,4 @@
+!/vivo-blueos/kernel
+!/vivo-blueos/build
+!/vivo-blueos/out/
+!/vivo-blueos/out/*.ninja

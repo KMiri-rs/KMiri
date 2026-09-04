@@ -1,0 +1,20 @@
+services:
+  vivo-blueos:
+    container_name: blueos-kmiri
+    build:
+      context: .
+      network: host
+    image: vivo-blueos:local
+    network_mode: host
+    command: sleep infinity
+    volumes:
+      - /home/zjp/KMiri/vivo-blueos:/blueos-dev
+      - /home/zjp/.secrets/claude_settings.json:/root/.claude/settings.json
+      - /home/zjp/.gitconfig:/root/.gitconfig
+    env_file:
+      - /home/zjp/.secrets/agents.env
+    environment:
+      # inherit host environment variables
+      - http_proxy
+      - https_proxy
+      - no_proxy=ubuntu.com,archive.ubuntu.com,security.ubuntu.com,localhost,127.0.0.1
