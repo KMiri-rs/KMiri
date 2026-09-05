@@ -1,4 +1,4 @@
-.PHONY: init sync status build run stop gen check
+.PHONY: init sync status build run stop gen check miri_test
 
 # ====== repo management ======
 
@@ -36,3 +36,9 @@ gen:
 
 check: gen
 	ninja -C ${OUT_DIR} check_all
+
+miri_test:
+	@MIRI_SYSROOT=$$(cargo miri setup --print-sysroot 2>/dev/null); \
+	  export MIRI_SYSROOT; \
+	  gn gen out/none --args='board="none"'; \
+	  ninja -C out/none kernel/infra:check_infra_by_miri
