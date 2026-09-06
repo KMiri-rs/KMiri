@@ -11,6 +11,17 @@ sync:
 status:
 	repo status
 
+MSG :=
+define COMMIT_SCRIPT
+if [ -n "$$(git status --porcelain)" ]; then \
+    git add -A; \
+    git commit -m "${MSG}"; \
+fi
+endef
+
+commit:
+	repo forall -p -c '${COMMIT_SCRIPT}'
+
 # ====== docker management ======
 
 # Run this after Dockerfile is changed.
