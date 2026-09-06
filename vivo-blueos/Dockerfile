@@ -35,12 +35,5 @@ RUN wget https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-
   && rm -rf ripgrep-15.2.0-x86_64-unknown-linux-musl/ \
   && rm ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz
 
-RUN RUST_SRC=$(rustc --print sysroot)/lib/rustlib/src \
-  && mkdir -p ${RUST_SRC} \
-  && git clone --depth 1 https://github.com/vivoblueos/rust.git ${RUST_SRC}/rust \
-  && cd ${RUST_SRC}/rust \
-  && git submodule update --init --recursive --depth 1 library/backtrace \
-  && git submodule update --init --recursive --depth 1 library/stdarch
-
 RUN echo "fish" >> /root/.bashrc
 
