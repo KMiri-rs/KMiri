@@ -32,15 +32,12 @@ ENV PATH="${LOCAL_BIN}:${PATH}"
 RUN wget https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz \
   && tar xvf ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz \
   && mv ripgrep-15.2.0-x86_64-unknown-linux-musl/rg ${LOCAL_BIN} \
-  && rm -rf ripgrep-15.2.0-x86_64-unknown-linux-musl/ \
-  && rm ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz
+  && rm -rf ripgrep-15.2.0-x86_64-unknown-linux-musl*
 
-RUN RUST_SRC=$(rustc --print sysroot)/lib/rustlib/src \
-  && mkdir -p ${RUST_SRC} \
-  && git clone --depth 1 https://github.com/vivoblueos/rust.git ${RUST_SRC}/rust \
-  && cd ${RUST_SRC}/rust \
-  && git submodule update --init --recursive --depth 1 library/backtrace \
-  && git submodule update --init --recursive --depth 1 library/stdarch
+RUN wget https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-x86_64-unknown-linux-gnu.tar.gz \
+  && tar xvf fd-v10.5.0-x86_64-unknown-linux-gnu.tar.gz \
+  && mv fd-v10.5.0-x86_64-unknown-linux-gnu/fd ${LOCAL_BIN} \
+  && rm -rf fd-v10.5.0-x86_64-unknown-linux-gnu*
 
 RUN echo "fish" >> /root/.bashrc
 

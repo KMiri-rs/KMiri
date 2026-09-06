@@ -11,6 +11,17 @@ sync:
 status:
 	repo status
 
+MSG :=
+define COMMIT_SCRIPT
+if [ -n "$$(git status --porcelain)" ]; then \
+    git add -A; \
+    git commit -m "${MSG}"; \
+fi
+endef
+
+commit:
+	repo forall -p -c '${COMMIT_SCRIPT}'
+
 # ====== docker management ======
 
 # Run this after Dockerfile is changed.
@@ -38,7 +49,7 @@ check: gen
 	ninja -C ${OUT_DIR} check_all
 
 miri_test:
-	@MIRI_SYSROOT=$$(cargo miri setup --print-sysroot 2>/dev/null); \
-	  export MIRI_SYSROOT; \
+	@export MIRI_SYSROOT=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot; \
+		[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
 	  gn gen out/none --args='board="none"'; \
 	  ninja -C out/none kernel/infra:check_infra_by_miri
