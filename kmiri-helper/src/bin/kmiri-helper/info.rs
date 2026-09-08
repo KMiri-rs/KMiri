@@ -1,6 +1,5 @@
 use kmiri_helper::FunctionInstanceInfo;
 use rustc_middle::ty::TyCtxt;
-use rustc_middle::ty::print::{with_no_trimmed_paths, with_resolve_crate_name};
 use rustc_public::CrateDef;
 use rustc_public::mir::mono::Instance;
 use rustc_public::rustc_internal::internal;
@@ -8,7 +7,7 @@ use rustc_span::{BytePos, FileName, RealFileName, Span, source_map::SourceMap};
 
 pub fn new<'tcx>(instance: Instance, tcx: TyCtxt<'tcx>) -> FunctionInstanceInfo {
     let def_id = internal(tcx, instance.def.def_id());
-    let name = with_no_trimmed_paths!(with_resolve_crate_name!(tcx.def_path_str(def_id)));
+    let name = kmiri_helper::instance_name(tcx, internal(tcx, instance));
 
     let span = if let Some(local_def_id) = def_id.as_local() {
         let hir_id = tcx.local_def_id_to_hir_id(local_def_id);
