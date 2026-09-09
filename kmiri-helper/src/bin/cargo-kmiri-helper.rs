@@ -1,3 +1,9 @@
+// kmiri-helper lib uses rustc_private APIs; this binary doesn't call them
+// directly but links against the lib, so we need the sysroot in the linker path.
+// See https://github.com/KMiri-rs/KMiri/issues/179
+#![feature(rustc_private)]
+extern crate rustc_driver;
+
 use itertools::Itertools;
 use kmiri_helper::*;
 use std::{
