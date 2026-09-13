@@ -1,6 +1,7 @@
-.PHONY: init sync status build run stop gen check miri_test
+PROJ := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 
 # ====== repo management ======
+.PHONY: init sync status snapshot restore commit
 
 init:
 	repo init -u git@github.com:KMiri-rs/vivoblueos-manifests.git -b kmiri -m manifest.xml && repo sync
@@ -29,6 +30,7 @@ commit:
 	repo forall -p -c '${COMMIT_SCRIPT}'
 
 # ====== docker management ======
+.PHONY: build run stop gen check miri_test
 
 # Run this after Dockerfile is changed.
 build:
@@ -43,6 +45,7 @@ stop:
 	docker compose stop
 
 # ====== kernel management ======
+.PHONY: gen check miri_test
 
 BOARD := qemu_riscv64
 BUILD_MODE := debug
@@ -55,12 +58,15 @@ check: gen
 	ninja -C ${OUT_DIR} check_all
 
 miri_test:
-	@export MIRI_SYSROOT=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot; \
+	@export PATH=$(PROJ)/sysroot/usr/local/bin:$${PATH}; \
+	 export MIRI_SYSROOT=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot; \
 		[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
 	  gn gen out/none --args='board="none"'; \
 	  ninja -C out/none kernel/infra:check_infra_by_miri
 
 # ====== rust toolchain ======
+.PHONY: rust-check rust-install rust-sysroot-download
+
 define RUST_XPY
 	cd rust && $(if $(2),$(2) &&) \
 	./x.py $(1) -i --stage 1 compiler/rustc && \
@@ -87,3 +93,7 @@ rust-install:
 	$(call RUST_XPY,install,export DESTDIR=/tmp/sysroot && ./x.py install -i --stage 1 llvm-tools) && \
 		PATH=$${DESTDIR}/usr/local/bin:$$PATH MIRI_LIB_SRC=library MIRI_SYSROOT=$${DESTDIR}/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot cargo miri setup
 
+rust-sysroot-download:
+	wget https://github.com/KMiri-rs/vivoblueos-toolchain/releases/download/rustc-sysroot-nightly-2026-07-21/rustc-sysroot-nightly-2026-07-21.tar.xz
+	rm -rf sysroot
+	tar -xJf rustc-sysroot-nightly-2026-07-21.tar.xz
