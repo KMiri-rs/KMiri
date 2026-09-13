@@ -55,7 +55,8 @@ check: gen
 	ninja -C ${OUT_DIR} check_all
 
 miri_test:
-	@export MIRI_SYSROOT=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot; \
+	@export PATH=$$($$PWD)/sysroot/usr/local/bin:$$PATH; \
+	 export MIRI_SYSROOT=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot; \
 		[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
 	  gn gen out/none --args='board="none"'; \
 	  ninja -C out/none kernel/infra:check_infra_by_miri
@@ -87,3 +88,7 @@ rust-install:
 	$(call RUST_XPY,install,export DESTDIR=/tmp/sysroot && ./x.py install -i --stage 1 llvm-tools) && \
 		PATH=$${DESTDIR}/usr/local/bin:$$PATH MIRI_LIB_SRC=library MIRI_SYSROOT=$${DESTDIR}/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot cargo miri setup
 
+rust-sysroot-download:
+	wget https://github.com/KMiri-rs/vivoblueos-toolchain/releases/download/rustc-sysroot-nightly-2026-07-21/rustc-sysroot-nightly-2026-07-21.tar.xz
+	rm -rf sysroot
+	tar -xJf rustc-sysroot-nightly-2026-07-21.tar.xz
