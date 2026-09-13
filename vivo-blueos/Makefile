@@ -11,6 +11,12 @@ sync:
 status:
 	repo status
 
+# For reproduce.
+snapshot:
+	repo manifest -o snapshot.xml -r
+restore:
+	repo init -m snapshot.xml && repo sync
+
 MSG :=
 define COMMIT_SCRIPT
 if [ -n "$$(git status --porcelain)" ]; then \

@@ -7,3 +7,4 @@ target/
 !/vivo-blueos/docker-compose.yml
 !/vivo-blueos/Makefile
 !/vivo-blueos/.gitignore
+!/vivo-blueos/snapshot.xml
