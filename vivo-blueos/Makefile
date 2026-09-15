@@ -36,10 +36,11 @@ commit:
 build:
 	docker compose build
 
+DOCKER_SERVICE := vivo-blueos_v3
 run:
-	@docker compose ps --status running -q vivo-blueos | grep -q . \
+	@docker compose ps --status running -q $(DOCKER_SERVICE) | grep -q . \
 	  || docker compose up -d
-	docker compose exec vivo-blueos bash
+	docker compose exec $(DOCKER_SERVICE) bash
 
 stop:
 	docker compose stop
@@ -65,7 +66,7 @@ miri_test:
 	  ninja -C out/none kernel/infra:check_infra_by_miri
 
 # ====== rust toolchain ======
-.PHONY: rust-check rust-install rust-sysroot-download
+.PHONY: rust-check rust-install rust-sysroot-tarball rust-sysroot-upload rust-sysroot-download
 
 define RUST_XPY
 	cd rust && $(if $(2),$(2) &&) \
@@ -90,8 +91,25 @@ rust-check:
 	$(call RUST_XPY,check)
 
 rust-install:
-	$(call RUST_XPY,install,export DESTDIR=/tmp/sysroot && ./x.py install -i --stage 1 llvm-tools) && \
-		PATH=$${DESTDIR}/usr/local/bin:$$PATH MIRI_LIB_SRC=library MIRI_SYSROOT=$${DESTDIR}/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot cargo miri setup
+	$(call RUST_XPY,install,export DESTDIR=/tmp/sysroot5 && \
+		./x.py install -i --stage 1 llvm-tools && \
+		./x.py dist rustc-dev && \
+		cp -r build/tmp/tarball/rust-src/image/lib/rustlib $${DESTDIR}/usr/local/lib/ && \
+		cp -r build/tmp/tarball/rustc-dev/x86_64-unknown-linux-gnu/image/lib/rustlib $${DESTDIR}/usr/local/lib/) && \
+		PATH=$${DESTDIR}/usr/local/bin:$${PATH} \
+		MIRI_SYSROOT=$${DESTDIR}/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot \
+		cargo miri setup
+
+SYSROOT_RUST_TOOLCHAIN := rustc-sysroot-nightly-2026-07-21
+rust-sysroot-tarball:
+	tar -cf - sysroot/ | xz -9 > $(SYSROOT_RUST_TOOLCHAIN).tar.xz
+
+rust-sysroot-upload:
+	gh release create $(SYSROOT_RUST_TOOLCHAIN)_v3 \
+		$(SYSROOT_RUST_TOOLCHAIN).tar.xz \
+		--title "$(SYSROOT_RUST_TOOLCHAIN)" \
+		--notes "$(SYSROOT_RUST_TOOLCHAIN)" \
+		-R KMiri-rs/vivoblueos-toolchain
 
 rust-sysroot-download:
 	wget https://github.com/KMiri-rs/vivoblueos-toolchain/releases/download/rustc-sysroot-nightly-2026-07-21/rustc-sysroot-nightly-2026-07-21.tar.xz

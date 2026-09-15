@@ -13,7 +13,7 @@
     <linkfile src="toplevel/BUILD.gn" dest="BUILD.gn"/>
   </project>
   <project name="vivoblueos-external" path="external" remote="my" revision="9060ff7fddba82b9f3ff58117cbd158e53e31b24" upstream="origin/external" dest-branch="main"/>
-  <project name="vivoblueos-kernel" path="kernel" remote="my" revision="794f448af0c120fba0af353f624c39c1e2629b27" upstream="origin/kernel" dest-branch="kmiri"/>
+  <project name="vivoblueos-kernel" path="kernel" remote="my" revision="9112f14a5fd2381457eae786341275ebec3c72fe" upstream="origin/kernel" dest-branch="kmiri"/>
   <project name="vivoblueos-libc" path="libc" remote="my" revision="c4e3f4cf5c86e2a3c9b6f37e9dcd468e4898b270" upstream="origin/libc" dest-branch="blueos-dev"/>
   <project name="vivoblueos-librs" path="librs" remote="my" revision="aa09b3fc17c65bb3d629f8cbf9986b4c2d06c2b1" upstream="origin/librs" dest-branch="main"/>
   <project name="vivoblueos-rust" path="rust" remote="my" revision="83b1b18c4ad41eabf6c73e5481a9da80fd116edb" upstream="origin/rust" dest-branch="v1.96.0"/>
