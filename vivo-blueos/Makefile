@@ -59,8 +59,8 @@ check: gen
 	ninja -C ${OUT_DIR} check_all
 
 miri_test:
-	@export PATH=$(PROJ)/sysroot/usr/local/bin:$${PATH}; \
-	 export MIRI_SYSROOT=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot; \
+	@export LD_LIBRARY_PATH=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib; \
+		export MIRI_SYSROOT=/root/.cache/miri; \
 		[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
 	  gn gen out/none --args='board="none"'; \
 	  ninja -C out/none kernel/infra:check_infra_by_miri
