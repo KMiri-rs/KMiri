@@ -22,7 +22,7 @@ RUN wget https://github.com/dandavison/delta/releases/download/0.19.2/delta-0.19
   && rm delta-0.19.2-x86_64-unknown-linux-gnu.tar.gz
 
 # claude and codex are install in `~/.local/bin`
-ENV PATH="${CARGO_BIN}:${LOCAL_BIN}:${PATH}"
+ENV PATH="/root/.cache/miri/bin:${CARGO_BIN}:${LOCAL_BIN}:${PATH}"
 
 RUN wget https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz \
   && tar xvf ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz \
