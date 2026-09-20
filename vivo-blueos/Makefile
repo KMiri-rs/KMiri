@@ -46,7 +46,7 @@ stop:
 	docker compose stop
 
 # ====== kernel management ======
-.PHONY: gen check miri_test
+.PHONY: gen check kmiri-setup miri_test
 
 BOARD := qemu_riscv64
 BUILD_MODE := debug
@@ -58,12 +58,18 @@ gen:
 check: gen
 	ninja -C ${OUT_DIR} check_all
 
-miri_test:
-	@export LD_LIBRARY_PATH=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib; \
-		export MIRI_SYSROOT=/root/.cache/miri; \
-		[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
-	  gn gen out/none --args='board="none"'; \
-	  ninja -C out/none kernel/infra:check_infra_by_miri
+kmiri-setup:
+	make -C /KMiri/kmiri kmiri-setup
+
+CASE :=
+MIRI_FLAGS := ["-Zkmiri-toml=/KMiri/vivo-blueos/kmiri.toml"]
+miri_test: kmiri-setup
+	export LD_LIBRARY_PATH=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib; \
+	export MIRI_SYSROOT=/root/.cache/miri; \
+	[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
+	rm out/ -rf; \
+	gn gen out/none --args='board="none" miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
+	ninja -C out/none kernel/infra:check_infra_by_miri
 
 # ====== rust toolchain ======
 .PHONY: rust-check rust-install rust-sysroot-tarball rust-sysroot-upload rust-sysroot-download
