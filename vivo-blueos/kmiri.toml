@@ -1,0 +1,6 @@
+page_table = false
+total_mem_size = 0x10000000
+
+# Symbols defined in user code that should take precedence over built-in shims.
+[user_preferred_symbol]
+strlen = true

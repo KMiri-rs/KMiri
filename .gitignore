@@ -6,5 +6,6 @@ target/
 !/vivo-blueos/Dockerfile
 !/vivo-blueos/docker-compose.yml
 !/vivo-blueos/Makefile
+!/vivo-blueos/kmiri.toml
 !/vivo-blueos/.gitignore
 !/vivo-blueos/snapshot.xml

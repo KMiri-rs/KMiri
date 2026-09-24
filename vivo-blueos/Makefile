@@ -46,7 +46,7 @@ stop:
 	docker compose stop
 
 # ====== kernel management ======
-.PHONY: gen check kmiri-setup miri_test
+.PHONY: gen check kmiri-setup miri_test fmt rustfmt gn-check-format
 
 BOARD := qemu_riscv64
 BUILD_MODE := debug
@@ -57,6 +57,17 @@ gen:
 
 check: gen
 	ninja -C ${OUT_DIR} check_all
+
+RUST_LIB_SRC := $(abspath rust/library)
+
+rust-analyzer:
+	gn gen out/$(BOARD) --export-rust-project
+	python3 -c "\
+import json, sys; \
+d = json.load(open('out/$(BOARD)/rust-project.json')); \
+d['sysroot_src'] = '$(RUST_LIB_SRC)'; \
+json.dump(d, open('out/$(BOARD)/rust-project.json', 'w'), indent=2)"
+	cp out/$(BOARD)/rust-project.json rust-project.json
 
 kmiri-setup:
 	make -C /KMiri/kmiri kmiri-setup
@@ -70,6 +81,21 @@ miri_test: kmiri-setup
 	rm out/ -rf; \
 	gn gen out/none --args='board="none" miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
 	ninja -C out/none kernel/infra:check_infra_by_miri
+
+# ====== code formatting ======
+fmt: rustfmt gn-check-format
+
+RUST_KERNEL_SRC := $(abspath kernel)
+
+rustfmt:
+	@echo "Running rustfmt on kernel Rust files..."
+	find $(RUST_KERNEL_SRC) -type f -name "*.rs" | \
+		xargs rustfmt --edition=2021 --unstable-features --skip-children \
+			--config-path=$(RUST_KERNEL_SRC)/rustfmt.toml || true
+
+gn-check-format:
+	@echo "Checking GN file formatting..."
+	find build -type f \( -name "*.gn" -o -name "*.gni" \) -exec gn format --dry-run {} +
 
 # ====== rust toolchain ======
 .PHONY: rust-check rust-install rust-sysroot-tarball rust-sysroot-upload rust-sysroot-download
