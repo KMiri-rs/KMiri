@@ -73,7 +73,12 @@ kmiri-setup:
 	make -C /KMiri/kmiri kmiri-setup
 
 CASE :=
+DEBUGGER :=
+ifeq ($(DEBUGGER),)
 MIRI_FLAGS := ["-Zkmiri-toml=/KMiri/vivo-blueos/kmiri.toml"]
+else
+MIRI_FLAGS := ["-Zkmiri-toml=/KMiri/vivo-blueos/kmiri.toml", "--debugger"]
+endif
 miri_test: kmiri-setup
 	export LD_LIBRARY_PATH=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib; \
 	export MIRI_SYSROOT=/root/.cache/miri; \
