@@ -73,12 +73,21 @@ kmiri-setup:
 	make -C /KMiri/kmiri kmiri-setup
 
 CASE :=
+
+# Optional miri flags:
+# DEBUGGER=1 adds --debugger (interactive TUI),
+# TB=1 adds -Zmiri-tree-borrows (Tree Borrows aliasing model).
 DEBUGGER :=
-ifeq ($(DEBUGGER),)
-MIRI_FLAGS := ["-Zkmiri-toml=/KMiri/vivo-blueos/kmiri.toml"]
-else
-MIRI_FLAGS := ["-Zkmiri-toml=/KMiri/vivo-blueos/kmiri.toml", "--debugger"]
-endif
+TB :=
+
+# Emits ', "$2"' only when $1 is non-empty, so any combination is a valid GN list.
+_sep_ := ,
+add_flag = $(if $(1),$(_sep_) "$(2)")
+MIRI_FLAGS := [ \
+	"-Zkmiri-toml=/KMiri/vivo-blueos/kmiri.toml" \
+	$(call add_flag,$(DEBUGGER),--debugger) \
+	$(call add_flag,$(TB),-Zmiri-tree-borrows) \
+]
 miri_test: kmiri-setup
 	export LD_LIBRARY_PATH=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib; \
 	export MIRI_SYSROOT=/root/.cache/miri; \
