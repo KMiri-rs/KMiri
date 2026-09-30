@@ -8,14 +8,14 @@
   <project name="apps_example" path="apps/example" revision="65bcdb6f582bd435dbefdfbbdc2d64dfd4b81b65" upstream="main" dest-branch="main"/>
   <project name="apps_shell" path="apps/shell" revision="e9b87f10668c0fac31b3c8b2877dd999f2ce7550" upstream="main" dest-branch="main"/>
   <project name="book" revision="64f585bce17b51c48b72e66041a53566454d2791" upstream="main" dest-branch="main"/>
-  <project name="vivoblueos-build" path="build" remote="my" revision="9378d6abcf316f621c67c2a17c817b83f2a06299" upstream="origin/build" dest-branch="kmiri">
+  <project name="vivoblueos-build" path="build" remote="my" revision="8d6fbf224bcbacb4a8e161f38df97da5048f18bd" upstream="origin/build" dest-branch="kmiri">
     <linkfile src="toplevel/.gn" dest=".gn"/>
     <linkfile src="toplevel/BUILD.gn" dest="BUILD.gn"/>
   </project>
-  <project name="vivoblueos-external" path="external" remote="my" revision="431067a139d2938967f6e5c2fc689b57098ccb0b" upstream="origin/external" dest-branch="main"/>
-  <project name="vivoblueos-kernel" path="kernel" remote="my" revision="a3a328d358f036ac4928c7dd0b53c50b8b5cfb39" upstream="origin/kernel" dest-branch="kmiri"/>
-  <project name="vivoblueos-libc" path="libc" remote="my" revision="1c7c604cb162ca0e40ca2b9696253b621789fc6f" upstream="origin/libc" dest-branch="blueos-dev"/>
-  <project name="vivoblueos-librs" path="librs" remote="my" revision="12b0917722ea578708fb5199f6997026b793034f" upstream="origin/librs" dest-branch="main"/>
-  <project name="vivoblueos-rust" path="rust" remote="my" revision="6ef3062475693f1592be0fe257565c187b389f5b" upstream="origin/rust" dest-branch="v1.96.0"/>
+  <project name="vivoblueos-external" path="external" remote="my" revision="6378700089beac489717571ea476661901e57b6a" upstream="origin/external" dest-branch="kmiri"/>
+  <project name="vivoblueos-kernel" path="kernel" remote="my" revision="9daf2a8b8fd980b9fa10a3e14404f0bd76f8cf69" upstream="origin/kernel" dest-branch="kmiri"/>
+  <project name="vivoblueos-libc" path="libc" remote="my" revision="f83317852f1825bd6eb2a47f12b790129c5ab7a5" upstream="origin/libc" dest-branch="kmiri"/>
+  <project name="vivoblueos-librs" path="librs" remote="my" revision="a437f6e069bcf36a8cb7a4898163a858c644921d" upstream="origin/librs" dest-branch="kmiri"/>
+  <project name="vivoblueos-rust" path="rust" remote="my" revision="6ef3062475693f1592be0fe257565c187b389f5b" upstream="origin/rust" dest-branch="kmiri"/>
   <project name="vivoblueos-toolchain" path="toolchain" remote="my" revision="11bae8d8ec7fbc9f68a7ac039f00dec73fc39750" upstream="origin/toolchain" dest-branch="kmiri"/>
 </manifest>

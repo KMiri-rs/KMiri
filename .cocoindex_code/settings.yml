@@ -9,6 +9,7 @@ exclude_patterns:
 - '**/vendor/*'
 - '**/.cocoindex_code'
 - 'old/**'
+- 'linux/**'
 include_patterns:
 - '**/*.py'
 - '**/*.pyi'
