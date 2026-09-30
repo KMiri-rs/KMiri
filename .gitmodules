@@ -22,3 +22,7 @@
 [submodule "tock"]
 	path = tock
 	url = https://github.com/KMiri-rs/tock.git
+[submodule "linux"]
+	path = linux
+	url = https://github.com/KMiri-rs/linux.git
+	shallow = true
