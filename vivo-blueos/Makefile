@@ -40,7 +40,7 @@ DOCKER_SERVICE := vivo-blueos_v3
 run:
 	@docker compose ps --status running -q $(DOCKER_SERVICE) | grep -q . \
 	  || docker compose up -d
-	docker compose exec $(DOCKER_SERVICE) bash
+	docker compose exec $(DOCKER_SERVICE) fish
 
 stop:
 	docker compose stop

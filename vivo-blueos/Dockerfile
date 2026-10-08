@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fish \
     vim \
     wget \
+    gh \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://claude.ai/install.sh | bash
