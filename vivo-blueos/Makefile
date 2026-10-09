@@ -49,11 +49,13 @@ stop:
 .PHONY: gen check kmiri-setup miri_test fmt rustfmt gn-check-format
 
 BOARD := qemu_riscv64
-BUILD_MODE := debug
-OUT_DIR := out/${BOARD}.${BUILD_MODE}
+BUILD_TYPE := debug
+OUT_DIR := out/${BOARD}.${BUILD_TYPE}
+DEFCONFIG := $(abspath minimal.defconfig)
+ARGS_BASE := board=\"$(BOARD)\" build_type=\"$(BUILD_TYPE)\" defconfig_files=\"$(DEFCONFIG)\"
 
 gen:
-	gn gen ${OUT_DIR} --args='build_type="${BUILD_MODE}" board="${BOARD}"'
+	gn gen ${OUT_DIR} --args='build_type="${BUILD_TYPE}" board="${BOARD}"'
 
 check: gen
 	ninja -C ${OUT_DIR} check_all
@@ -95,6 +97,35 @@ miri_test: kmiri-setup
 	rm out/ -rf; \
 	gn gen out/none --args='board="none" miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
 	ninja -C out/none kernel/infra:check_infra_by_miri
+
+miri_run: kmiri-setup
+	rm out/ -rf; \
+	gn gen out/miri-boot/native-minimal --args="$(ARGS_BASE)"; 
+	ninja -C out/miri-boot/native-minimal apps/example/no_std:no_std_example
+
+# RV64 no_std MIR sysroot and the minimal native ELF that run_boot_miri.py inspects.
+MIRI_BOOT_SYSROOT := $(abspath out/miri-boot/sysroot)
+MIRI_BOOT_NATIVE  := $(abspath out/miri-boot/native-minimal/bin/no_std_example)
+BOOT_CASE := normal
+
+# miri_boot.sh is only a wrapper around `gn gen` + `ninja`; run those two directly.
+# Standing env: LD_LIBRARY_PATH (miri needs it to load librustc_driver), MIRI_SYSROOT.
+# MIRI_NO_STD / MIRI_LIB_SRC are consumed solely by `cargo miri setup`, so scope them there.
+.PHONY: miri_boot
+miri_boot: kmiri-setup
+	export LD_LIBRARY_PATH=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib; \
+	export MIRI_SYSROOT=$(MIRI_BOOT_SYSROOT); \
+	if [ ! -d "$${MIRI_SYSROOT}/lib/rustlib/riscv64-vivo-blueos/lib" ]; then \
+		cargo miri setup --target riscv64-vivo-blueos; \
+	fi; \
+	if [ ! -f "$(MIRI_BOOT_NATIVE)" ]; then \
+		env -u MIRI_SYSROOT gn gen out/miri-boot/native-minimal --args="$(ARGS_BASE)"; \
+		env -u MIRI_SYSROOT ninja -j4 -C out/miri-boot/native-minimal apps/example/no_std:no_std_example; \
+	fi; \
+	out=out/miri-boot/boot-$(BOOT_CASE); \
+	args="$(ARGS_BASE) miri_boot=true miri_boot_case=\"$(BOOT_CASE)\" miri_boot_binary=\"$$(realpath $$(command -v miri))\" miri_boot_sysroot=\"$$(realpath $${MIRI_SYSROOT})\" miri_boot_native_elf=\"$$(realpath $(MIRI_BOOT_NATIVE))\""; \
+	env -u MIRI_SYSROOT gn gen "$${out}" --args="$${args}"; \
+	env -u MIRI_SYSROOT ninja -C "$${out}" kernel/kernel:check_boot_by_miri
 
 # ====== code formatting ======
 fmt: rustfmt gn-check-format
