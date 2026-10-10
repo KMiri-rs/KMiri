@@ -103,29 +103,45 @@ miri_run: kmiri-setup
 	gn gen out/miri-boot/native-minimal --args="$(ARGS_BASE)"; 
 	ninja -C out/miri-boot/native-minimal apps/example/no_std:no_std_example
 
-# RV64 no_std MIR sysroot and the minimal native ELF that run_boot_miri.py inspects.
-MIRI_BOOT_SYSROOT := $(abspath out/miri-boot/sysroot)
-MIRI_BOOT_NATIVE  := $(abspath out/miri-boot/native-minimal/bin/no_std_example)
-BOOT_CASE := normal
+# Boot and run the BlueOS kernel under Miri (KMiri), not QEMU.
+#
+# It is a two-stage build:
+#   stage 1 (native)  - GN compiles the kernel crate graph with plain rustc,
+#                       every rlib carrying MIR via `-Zalways-encode-mir`
+#                       (see build/config/BUILD.gn under `miri_boot`). The
+#                       `no_std_example` ELF is only a native reference.
+#   stage 2 (interpret)- check_boot_by_miri runs build/scripts/miri/boot.py,
+#                       which reuses GN's own rustc flags (via
+#                       `ninja -t commands`), forces `--crate-type=bin`, and
+#                       lets miri interpret the kernel from its `miri_start`
+#                       entry under the boot.toml memory model.
+#
+# Key environment variables:
+#   MIRI_BOOT_SYSROOT - no_std RISC-V sysroot with full MIR; read by gn
+#                       (build/config/BUILD.gn) and by boot.py. Created here
+#                       with `cargo miri setup` when missing.
+#   MIRI_SYSROOT      - consumed by `cargo miri setup` to choose the sysroot
+#                       location, and by the miri driver; unset while the
+#                       native stage builds so plain rustc is used.
+#   LD_LIBRARY_PATH   - miri needs it to load librustc_driver at runtime.
+#   PATH              - boot.py finds the `miri` executable on PATH.
+MIRI_BOOT_OUT := $(abspath out/miri-boot)
+MIRI_BOOT_SYSROOT := $(MIRI_BOOT_OUT)/sysroot
+MIRI_BOOT_NATIVE  := $(MIRI_BOOT_OUT)/native-minimal
 
-# miri_boot.sh is only a wrapper around `gn gen` + `ninja`; run those two directly.
-# Standing env: LD_LIBRARY_PATH (miri needs it to load librustc_driver), MIRI_SYSROOT.
-# MIRI_NO_STD / MIRI_LIB_SRC are consumed solely by `cargo miri setup`, so scope them there.
 .PHONY: miri_boot
 miri_boot: kmiri-setup
 	export LD_LIBRARY_PATH=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib; \
-	export MIRI_SYSROOT=$(MIRI_BOOT_SYSROOT); \
-	if [ ! -d "$${MIRI_SYSROOT}/lib/rustlib/riscv64-vivo-blueos/lib" ]; then \
-		cargo miri setup --target riscv64-vivo-blueos; \
+	if [ ! -d "$${MIRI_BOOT_SYSROOT}/lib/rustlib/riscv64-vivo-blueos/lib" ]; then \
+		MIRI_SYSROOT=$(MIRI_BOOT_SYSROOT) cargo miri setup --target riscv64-vivo-blueos; \
 	fi; \
-	if [ ! -f "$(MIRI_BOOT_NATIVE)" ]; then \
-		env -u MIRI_SYSROOT gn gen out/miri-boot/native-minimal --args="$(ARGS_BASE)"; \
-		env -u MIRI_SYSROOT ninja -j4 -C out/miri-boot/native-minimal apps/example/no_std:no_std_example; \
+	if [ ! -f "$(MIRI_BOOT_NATIVE)/bin/no_std_example" ]; then \
+		gn gen $(MIRI_BOOT_NATIVE) --args="$(ARGS_BASE)"; \
+		ninja -C $(MIRI_BOOT_NATIVE) apps/example/no_std:no_std_example; \
 	fi; \
-	out=out/miri-boot/boot-$(BOOT_CASE); \
-	args="$(ARGS_BASE) miri_boot=true miri_boot_case=\"$(BOOT_CASE)\" miri_boot_binary=\"$$(realpath $$(command -v miri))\" miri_boot_sysroot=\"$$(realpath $${MIRI_SYSROOT})\" miri_boot_native_elf=\"$$(realpath $(MIRI_BOOT_NATIVE))\""; \
-	env -u MIRI_SYSROOT gn gen "$${out}" --args="$${args}"; \
-	env -u MIRI_SYSROOT ninja -C "$${out}" kernel/kernel:check_boot_by_miri
+	export MIRI_BOOT_SYSROOT=$(MIRI_BOOT_SYSROOT); \
+	gn gen "$(MIRI_BOOT_OUT)" --args="$(ARGS_BASE) miri_boot=true"; \
+	ninja -C "$(MIRI_BOOT_OUT)" kernel/kernel:check_boot_by_miri
 
 # ====== code formatting ======
 fmt: rustfmt gn-check-format
