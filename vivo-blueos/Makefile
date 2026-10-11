@@ -46,7 +46,7 @@ stop:
 	docker compose stop
 
 # ====== kernel management ======
-.PHONY: gen check kmiri-setup miri_test miri_test_allocator fmt rustfmt gn-check-format
+.PHONY: gen check kmiri-setup miri_test miri_test_kernel miri_test_allocator fmt rustfmt gn-check-format
 
 BOARD := qemu_riscv64
 BUILD_TYPE := debug
@@ -137,6 +137,8 @@ miri_run: kmiri-setup
 MIRI_BOOT_OUT := $(abspath out/miri-boot)
 MIRI_BOOT_SYSROOT := $(MIRI_BOOT_OUT)/sysroot
 MIRI_BOOT_NATIVE  := $(MIRI_BOOT_OUT)/native-minimal
+MIRI_BOOT_NATIVE_STAMP := $(MIRI_BOOT_NATIVE)/obj/kernel/kernel/blueos/libblueos.rlib
+MIRI_KERNEL_TEST_OUT := $(abspath out/miri-kernel-test)
 
 .PHONY: miri_boot
 miri_boot: kmiri-setup
@@ -144,13 +146,24 @@ miri_boot: kmiri-setup
 	if [ ! -d "$${MIRI_BOOT_SYSROOT}/lib/rustlib/riscv64-vivo-blueos/lib" ]; then \
 		MIRI_SYSROOT=$(MIRI_BOOT_SYSROOT) cargo miri setup --target riscv64-vivo-blueos; \
 	fi; \
-	if [ ! -f "$(MIRI_BOOT_NATIVE)/bin/no_std_example" ]; then \
+	if [ ! -f "$(MIRI_BOOT_NATIVE_STAMP)" ]; then \
 		gn gen $(MIRI_BOOT_NATIVE) --args="$(ARGS_BASE)"; \
-		ninja -C $(MIRI_BOOT_NATIVE) apps/example/no_std:no_std_example; \
+		ninja -C $(MIRI_BOOT_NATIVE) kernel/kernel:blueos; \
 	fi; \
 	export MIRI_BOOT_SYSROOT=$(MIRI_BOOT_SYSROOT); \
 	gn gen "$(MIRI_BOOT_OUT)" --args="$(ARGS_BASE) miri_boot=true"; \
 	ninja -C "$(MIRI_BOOT_OUT)" kernel/kernel:check_boot_by_miri
+
+.PHONY: miri_test_kernel
+miri_test_kernel: kmiri-setup
+	export LD_LIBRARY_PATH=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib; \
+	export MIRI_SYSROOT=/root/.cache/miri; \
+	[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
+	export TARGET_BOARD=miri; \
+	out=$(MIRI_KERNEL_TEST_OUT); \
+	rm -rf $${out}; \
+	gn gen $${out} --args='board="miri" build_type="$(BUILD_TYPE)" defconfig_files="$(DEFCONFIG)" miri_test_kernel=true kernel_miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
+	ninja -C $${out} kernel/kernel:check_kernel_by_miri
 
 # ====== code formatting ======
 fmt: rustfmt gn-check-format
