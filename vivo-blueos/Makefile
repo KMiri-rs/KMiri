@@ -154,6 +154,8 @@ miri_boot: kmiri-setup
 	gn gen "$(MIRI_BOOT_OUT)" --args="$(ARGS_BASE) miri_boot=true"; \
 	ninja -C "$(MIRI_BOOT_OUT)" kernel/kernel:check_boot_by_miri
 
+USE_BLUEOS_ALLOC := false
+
 .PHONY: miri_test_kernel
 miri_test_kernel: kmiri-setup
 	export LD_LIBRARY_PATH=$$(rustc --print=sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib; \
@@ -162,7 +164,7 @@ miri_test_kernel: kmiri-setup
 	export TARGET_BOARD=miri; \
 	out=$(MIRI_KERNEL_TEST_OUT); \
 	rm -rf $${out}; \
-	gn gen $${out} --args='board="miri" build_type="$(BUILD_TYPE)" defconfig_files="$(DEFCONFIG)" miri_test_kernel=true kernel_miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
+	gn gen $${out} --args='board="miri" build_type="$(BUILD_TYPE)" defconfig_files="$(DEFCONFIG)" miri_test_kernel=true kernel_miri_test_case="$(CASE)" miri_kernel_use_blueos_alloc=$(USE_BLUEOS_ALLOC) miri_flags=$(MIRI_FLAGS)'; \
 	ninja -C $${out} kernel/kernel:check_kernel_by_miri
 
 # ====== code formatting ======
