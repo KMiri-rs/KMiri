@@ -60,6 +60,23 @@ gen:
 check: gen
 	ninja -C ${OUT_DIR} check_all
 
+.PHONY: qemu_run
+# Start the native qemu_riscv64 kernel. Exit 124 means it was still running after 30s.
+QEMU_OUT := out/qemu-run
+qemu_run:
+	gn gen $(QEMU_OUT) --args="$(ARGS_BASE)"
+	ninja -C $(QEMU_OUT) qemu_kernel
+	timeout 30 qemu-system-riscv64 -machine virt -bios none \
+		-kernel $(QEMU_OUT)/bin/no_std_example \
+		-m 128M -smp 1 -nographic \
+		-semihosting-config enable=on; \
+	rc=$$?; \
+	if [ $$rc -eq 124 ]; then \
+		echo "qemu_run: stopped after 30s because the kernel was still running"; \
+	fi; \
+	exit $$rc
+
+
 RUST_LIB_SRC := $(abspath rust/library)
 
 rust-analyzer:
