@@ -7,6 +7,7 @@ target/
 !/vivo-blueos/docker-compose.yml
 !/vivo-blueos/Makefile
 !/vivo-blueos/kmiri.toml
+!/vivo-blueos/kernel-test.sh
 !/vivo-blueos/rust-project.json
 !/vivo-blueos/minimal.defconfig
 !/vivo-blueos/.gitignore
