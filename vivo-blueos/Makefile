@@ -60,6 +60,23 @@ gen:
 check: gen
 	ninja -C ${OUT_DIR} check_all
 
+.PHONY: qemu_run
+# Start the native qemu_riscv64 kernel. Exit 124 means it was still running after 30s.
+QEMU_OUT := out/qemu-run
+qemu_run:
+	gn gen $(QEMU_OUT) --args="$(ARGS_BASE)"
+	ninja -C $(QEMU_OUT) qemu_kernel
+	timeout 30 qemu-system-riscv64 -machine virt -bios none \
+		-kernel $(QEMU_OUT)/bin/no_std_example \
+		-m 128M -smp 1 -nographic \
+		-semihosting-config enable=on; \
+	rc=$$?; \
+	if [ $$rc -eq 124 ]; then \
+		echo "qemu_run: stopped after 30s because the kernel was still running"; \
+	fi; \
+	exit $$rc
+
+
 RUST_LIB_SRC := $(abspath rust/library)
 
 rust-analyzer:
@@ -95,7 +112,7 @@ miri_test: kmiri-setup
 	export MIRI_SYSROOT=/root/.cache/miri; \
 	[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
 	rm out/ -rf; \
-	gn gen out/none --args='board="none" miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
+	gn gen out/none --args='board="miri" miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
 	ninja -C out/none kernel/infra:check_infra_by_miri
 
 miri_test_allocator: kmiri-setup
@@ -104,7 +121,7 @@ miri_test_allocator: kmiri-setup
 	[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
 	out=out/miri_test_allocator; \
 	rm $${out} -rf; \
-	gn gen $${out} --args='board="none" defconfig_files="$(DEFCONFIG)" miri_test_allocator=true allocator_miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
+	gn gen $${out} --args='board="miri" defconfig_files="$(DEFCONFIG)" miri_test_allocator=true allocator_miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
 	ninja -C $${out} kernel/allocator:check_allocator_by_miri
 
 miri_run: kmiri-setup
