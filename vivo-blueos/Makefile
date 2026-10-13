@@ -112,7 +112,7 @@ miri_test: kmiri-setup
 	export MIRI_SYSROOT=/root/.cache/miri; \
 	[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
 	rm out/ -rf; \
-	gn gen out/none --args='board="none" miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
+	gn gen out/none --args='board="miri" miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
 	ninja -C out/none kernel/infra:check_infra_by_miri
 
 miri_test_allocator: kmiri-setup
@@ -121,7 +121,7 @@ miri_test_allocator: kmiri-setup
 	[ -d "$${MIRI_SYSROOT}" ] || { echo "$${MIRI_SYSROOT} does not exist" && exit 1; }; \
 	out=out/miri_test_allocator; \
 	rm $${out} -rf; \
-	gn gen $${out} --args='board="none" defconfig_files="$(DEFCONFIG)" miri_test_allocator=true allocator_miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
+	gn gen $${out} --args='board="miri" defconfig_files="$(DEFCONFIG)" miri_test_allocator=true allocator_miri_test_case="$(CASE)" miri_flags=$(MIRI_FLAGS)'; \
 	ninja -C $${out} kernel/allocator:check_allocator_by_miri
 
 miri_run: kmiri-setup
