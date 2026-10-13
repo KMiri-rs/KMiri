@@ -26,3 +26,6 @@
 	path = linux
 	url = https://github.com/KMiri-rs/linux.git
 	shallow = true
+[submodule "book"]
+	path = book
+	url = https://github.com/KMiri-rs/book
