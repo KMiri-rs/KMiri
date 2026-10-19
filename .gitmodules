@@ -29,3 +29,9 @@
 [submodule "book"]
 	path = book
 	url = https://github.com/KMiri-rs/book
+[submodule "DragonOS"]
+	path = DragonOS
+	url = https://github.com/KMiri-rs/DragonOS.git
+[submodule "Redox"]
+	path = Redox
+	url = https://github.com/KMiri-rs/Redox.git
