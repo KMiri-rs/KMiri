@@ -1,7 +1,4 @@
 target/
-# CocoIndex Code (ccc)
-/.cocoindex_code/*
-!/.cocoindex_code/settings.yml
 /vivo-blueos/*
 !/vivo-blueos/Dockerfile
 !/vivo-blueos/docker-compose.yml
