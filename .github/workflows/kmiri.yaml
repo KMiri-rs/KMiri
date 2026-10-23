@@ -1,7 +1,8 @@
 name: KMiri
 
 on:
-  push:
+  workflow_dispatch:
+  # push:
 
 env:
   # Use local version of ostd and other asterinas crates.
