@@ -15,9 +15,6 @@ use ostd::task::{Task, TaskOptions};
 // `kernel_main` itself is not a task, so the switches happen between two
 // spawned tasks: `a` starts `b`, and `b` switches back to `a`.
 //
-// A task that exits while another task is runnable keeps its Miri thread, so
-// run this test with `MIRIFLAGS=-Zmiri-ignore-leaks`.
-//
 // Expected: no WARN, and the kernel prints `b: resumed` and `a: resumed`.
 #[ostd::ktest::miri_main]
 fn kernel_main() {
