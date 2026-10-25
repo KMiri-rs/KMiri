@@ -1,0 +1,23 @@
+name: Asterinas
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  KMiri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize kmiri and asterinas submodules
+        run: |
+          git submodule update --init --depth 1 -- kmiri
+          git submodule update --init --depth 1 -- asterinas
+
+      - name: Install toolchain and enable miri component
+        run: rustc -V && rustup component add miri
+
+      - name: Test Asterinas
+        run: make -C kmiri asterinas-test-all
+
