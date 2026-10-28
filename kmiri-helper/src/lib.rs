@@ -3,9 +3,10 @@
 extern crate rustc_middle;
 
 use rustc_middle::ty;
+use rustc_middle::ty::TyCtxt;
 
 /// Return the instance name with monomorphized arguments.
-pub fn instance_name<'tcx>(tcx: ty::TyCtxt<'tcx>, instance: ty::Instance<'tcx>) -> String {
+pub fn instance_name<'tcx>(tcx: TyCtxt<'tcx>, instance: ty::Instance<'tcx>) -> String {
     ty::print::with_resolve_crate_name!(ty::print::with_no_trimmed_paths!(
         tcx.def_path_str_with_args(instance.def_id(), instance.args)
     ))
