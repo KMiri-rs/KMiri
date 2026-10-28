@@ -1,0 +1,48 @@
+name: Linux
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  KMiri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize kmiri and linux submodules
+        run: |
+          git submodule update --init --depth 1 -- kmiri
+          git submodule update --init --depth 1 -- linux
+
+      - name: Generate Linux config
+        working-directory: linux
+        run: |
+          sudo apt update
+          sudo apt install -y libclang-dev lld llvm libelf-dev
+          cargo install bindgen-cli
+          ./config.sh
+
+      - name: Install toolchain
+        run: |
+          rustc -V
+          rustup component add miri rustfmt clippy rust-src
+
+      - name: Install kmiri
+        run: make -C kmiri kmiri-setup
+
+      - name: UnitTest
+        working-directory: linux
+        run: |
+          make -f makefile.local miri-unit \
+          MIRI_TEST="--skip str::formatter_new_uaf_repro::formatter_new_uaf"
+
+      - name: UnitTest (passthrough)
+        working-directory: linux
+        run: |
+          make -f makefile.local miri-unit-passthrough SHELL=/bin/bash
+
+      - name: Doctest
+        working-directory: linux
+        run: |
+          make -f makefile.local miri-doctest
