@@ -1,0 +1,43 @@
+name: Redox
+
+on:
+  workflow_dispatch:
+  push:
+
+env:
+  # Pass Redox/kmiri.toml to kmiri.
+  MIRIFLAGS: -Zkmiri-toml=kmiri.toml
+
+jobs:
+  KMiri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --depth 1 -- kmiri
+          git submodule update --init --depth 1 -- Redox
+
+      - name: Install nasm
+        run: sudo apt update && sudo apt-get install -y nasm
+
+      - name: Install toolchain and enable miri component
+        run: rustc -V && rustup component add miri
+
+      - name: Install kmiri
+        run: env -u MIRIFLAGS make -C kmiri kmiri-setup
+
+      - name: Run rmm unit tests
+        working-directory: Redox
+        run: |
+          cargo miri test -p rmm
+
+      - name: Run kernel unit tests
+        working-directory: Redox
+        run: |
+          cargo miri test -- \
+            --skip test_work_stealing \
+            --skip combines_duplicate_overlapping_and_adjacent_regions \
+            --skip keeps_overlapping_regions_of_different_kinds_separate
+
