@@ -25,18 +25,8 @@ jobs:
       - name: Install toolchain and enable miri component
         run: rustc -V && rustup component add miri
 
-      - name: Run rmm binary
-        working-directory: Redox
-        run: cargo run -p rmm -F std
-
-      # Run rmm with original miri to bypass https://github.com/KMiri-rs/KMiri/issues/304
-      # When the kmiri oom problem is solved, we should use kmiri instead.
-      - name: Run rmm binary (miri)
-        working-directory: Redox
-        run: env -u MIRIFLAGS cargo miri run -p rmm -F std
-
       - name: Install kmiri
-        run: env -u MIRIFLAGS make -C kmiri kmiri-setup
+        run: env -u MIRIFLAGS make -C kmiri kmiri-setup DEBUG=
 
       - name: Run rmm unit tests
         working-directory: Redox
@@ -44,8 +34,13 @@ jobs:
 
       - name: Run kernel unit tests
         working-directory: Redox
-        run: |
-          cargo miri test -- \
-            --skip test_work_stealing \
-            --skip combines_duplicate_overlapping_and_adjacent_regions \
-            --skip keeps_overlapping_regions_of_different_kinds_separate
+        run: cargo miri test -- --skip test_work_stealing
+
+      - name: Run rmm binary
+        working-directory: Redox
+        run: cargo run -p rmm -F std
+
+      - name: Run rmm binary (miri)
+        working-directory: Redox
+        run: cargo miri run -p rmm -F std
+
