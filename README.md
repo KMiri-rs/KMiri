@@ -201,6 +201,12 @@ kmiri is useful as a development-time checker for kernel unsafe abstractions. It
 
 ## License And Credits
 
+This work is sponsored by [Beijing TongmingLake Information Technology Application InnovationCenter](https://tlaic.ac.cn/) (北京通明湖信息技术应用创新中心).
+
+<p align="center">
+  <img src="./env/tlaic.svg" alt="tlaic" width="200">
+</p>
+
 This repository combines and modifies components from Miri and Asterinas. Each component follows the license of its upstream project:
 
 - Code derived from **Miri** follows Miri's own license terms.
