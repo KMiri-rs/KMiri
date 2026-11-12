@@ -1,0 +1,38 @@
+error: Undefined Behavior: not granting access to tag <TAG> because that would remove [Unique for <TAG>] which is strongly protected
+  --> tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
+   |
+LL |         *core::ptr::addr_of_mut!(STATE) += 1;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Undefined Behavior occurred here
+   |
+   = help: this indicates a potential bug in the program: it performed an invalid operation, but the Stacked Borrows rules it violated are still experimental
+   = help: see https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md for further information
+help: <TAG> was created here, as the root tag for ALLOC
+  --> tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
+   |
+LL |     work(unsafe { &mut *core::ptr::addr_of_mut!(STATE) });
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: <TAG> is this argument
+  --> tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
+   |
+LL | fn work(r: &mut u32) {
+   |         ^
+   = note: stack backtrace:
+           0: handler
+               at tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
+           1: core::ub_checks::check_language_ub
+               at RUSTLIB/core/src/intrinsics/mod.rs:LL:CC
+           2: <u32 as std::iter::Step>::forward_unchecked
+               at RUSTLIB/core/src/iter/range.rs:LL:CC
+           3: <std::ops::Range<u32> as std::iter::range::RangeIteratorImpl>::spec_next
+               at RUSTLIB/core/src/iter/range.rs:LL:CC
+           4: std::iter::range::<impl std::iter::Iterator for std::ops::Range<u32>>::next
+               at RUSTLIB/core/src/iter/range.rs:LL:CC
+           5: work
+               at tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
+           6: main
+               at tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
