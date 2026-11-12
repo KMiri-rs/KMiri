@@ -894,42 +894,68 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     );
                 }
             }
-            "kern_miri_register_timer_irq" => {
-                let [handler] =
+            "kern_miri_register_irq_entry" => {
+                let [entry] =
                     this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
                 if !this.machine.irq_config.enabled() {
-                    throw_machine_stop!(TerminationInfo::Abort(
-                        "timer IRQ registered while KMiri IRQ simulation is disabled".to_owned()
-                    ));
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "{link_name}: IRQ entry registered while KMiri IRQ simulation is disabled"
+                    )));
                 }
-                let handler = this.get_ptr_fn(this.read_pointer(handler)?)?.as_instance()?;
-                this.machine.timer_irq_handler = Some(handler);
+                if this.machine.irq_entry.is_some() {
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "{link_name}: IRQ entry already registered"
+                    )));
+                }
+                let entry = this.get_ptr_fn(this.read_pointer(entry)?)?.as_instance()?;
+                this.machine.irq_entry = Some(entry);
                 if this.machine.irq_config.trace() {
                     eprintln!(
-                        "KMiri IRQ: cpu={} action=timer-registered block_count={}",
+                        "KMiri IRQ: cpu={} action=entry-registered block_count={}",
                         this.machine.threads.active_cpu, this.machine.basic_block_count,
                     );
                 }
             }
-            "kern_miri_test_raise_irq" => {
-                let [handler] =
+            "kern_miri_set_timer_vector" | "kern_miri_test_raise_irq" => {
+                let [vector] =
                     this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let vector = this.read_scalar(vector)?.to_u8()?;
                 if !this.machine.irq_config.enabled() {
-                    throw_machine_stop!(TerminationInfo::Abort(
-                        "test IRQ raised while KMiri IRQ simulation is disabled".to_owned()
-                    ));
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "{link_name}: vector {vector} used while KMiri IRQ simulation is disabled"
+                    )));
                 }
-                let handler = this.get_ptr_fn(this.read_pointer(handler)?)?.as_instance()?;
+                if vector < 32 {
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "{link_name}: vector {vector} is reserved for CPU exceptions (valid range 32..=255)"
+                    )));
+                }
                 let cpu = this.machine.threads.active_cpu;
-                let event_id = this.machine.queue_irq(cpu, handler);
-                if this.machine.irq_config.trace() {
-                    eprintln!(
-                        "KMiri IRQ: event={event_id} cpu={cpu} thread={:?} action=queued block_count={} pending={} IF={}",
-                        this.machine.threads.active_thread(),
-                        this.machine.basic_block_count,
-                        this.machine.irq_cpus[cpu].pending.len(),
-                        this.machine.irq_cpus[cpu].enabled,
-                    );
+                if link_name.as_str() == "kern_miri_set_timer_vector" {
+                    this.machine.timer_vector = Some(vector);
+                    if this.machine.irq_config.trace() {
+                        eprintln!(
+                            "KMiri IRQ: cpu={cpu} action=timer-vector vector={vector} block_count={}",
+                            this.machine.basic_block_count,
+                        );
+                    }
+                } else {
+                    if this.machine.irq_entry.is_none() {
+                        throw_machine_stop!(TerminationInfo::Abort(format!(
+                            "{link_name}: vector {vector} raised before IRQ entry was registered"
+                        )));
+                    }
+                    let event_id =
+                        this.machine.queue_irq(cpu, vector, crate::machine::IrqSource::Test);
+                    if this.machine.irq_config.trace() {
+                        eprintln!(
+                            "KMiri IRQ: event={event_id} cpu={cpu} thread={:?} action=queued vector={vector} source=Test block_count={} pending={} IF={}",
+                            this.machine.threads.active_thread(),
+                            this.machine.basic_block_count,
+                            this.machine.irq_cpus[cpu].pending.len(),
+                            this.machine.irq_cpus[cpu].enabled,
+                        );
+                    }
                 }
             }
             "kern_miri_init_ap" => {

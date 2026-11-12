@@ -1,6 +1,7 @@
-KMiri IRQ: cpu=0 thread=ThreadId(0) action=disable block_count=370 pending=0
-KMiri IRQ: cpu=0 thread=ThreadId(0) action=disable block_count=374 pending=0
-KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=queued block_count=393 pending=1 IF=false
-KMiri IRQ: cpu=0 thread=ThreadId(0) action=enable block_count=454 pending=1
-KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=delivered global_block_count=454 return_block=2 pending=0 IF=0
-KMiri IRQ: event=0 cpu=0 action=returned block_count=505 IF=true
+KMiri IRQ: cpu=0 action=entry-registered block_count=369
+KMiri IRQ: cpu=0 thread=ThreadId(0) action=disable block_count=373 pending=0
+KMiri IRQ: cpu=0 thread=ThreadId(0) action=disable block_count=377 pending=0
+KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=queued vector=40 source=Test block_count=396 pending=1 IF=false
+KMiri IRQ: cpu=0 thread=ThreadId(0) action=enable block_count=457 pending=1
+KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=delivered vector=40 source=Test global_block_count=457 return_block=2 pending=0 IF=0
+KMiri IRQ: event=0 cpu=0 action=returned vector=40 source=Test block_count=511 IF=true

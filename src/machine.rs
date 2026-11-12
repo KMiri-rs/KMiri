@@ -493,26 +493,35 @@ impl<'tcx> PrimitiveLayouts<'tcx> {
 /// The number of CPUs that KernMiri emulates.
 pub const CPU_NUM: usize = 2;
 
-/// A pending simulated interrupt. Its handler runs on the current Miri thread.
-pub(crate) struct PendingIrq<'tcx> {
-    pub(crate) handler: Instance<'tcx>,
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum IrqSource {
+    Timer,
+    Test,
+}
+
+/// A pending simulated interrupt, delivered to the entry on the current Miri thread.
+pub(crate) struct PendingIrq {
+    pub(crate) vector: u8,
     pub(crate) event_id: u64,
+    pub(crate) source: IrqSource,
 }
 
 pub(crate) struct ActiveIrq {
     pub(crate) event_id: u64,
+    pub(crate) vector: u8,
+    pub(crate) source: IrqSource,
     pub(crate) stack_depth: usize,
     pub(crate) was_enabled: bool,
     pub(crate) blocks: u64,
 }
 
-pub(crate) struct CpuIrqState<'tcx> {
+pub(crate) struct CpuIrqState {
     pub(crate) enabled: bool,
-    pub(crate) pending: VecDeque<PendingIrq<'tcx>>,
+    pub(crate) pending: VecDeque<PendingIrq>,
     pub(crate) active: Option<ActiveIrq>,
 }
 
-impl CpuIrqState<'_> {
+impl CpuIrqState {
     fn new() -> Self {
         Self { enabled: true, pending: VecDeque::new(), active: None }
     }
@@ -667,10 +676,11 @@ pub struct MiriMachine<'tcx> {
 
     /// KMiri's optional IRQ model, configured only through `-Zkmiri-toml`.
     pub(crate) irq_config: IrqConfigToml,
-    pub(crate) irq_cpus: Vec<CpuIrqState<'tcx>>,
+    pub(crate) irq_cpus: Vec<CpuIrqState>,
     pub(crate) irq_rng: StdRng,
     pub(crate) next_irq_event_id: u64,
-    pub(crate) timer_irq_handler: Option<Instance<'tcx>>,
+    pub(crate) irq_entry: Option<Instance<'tcx>>,
+    pub(crate) timer_vector: Option<u8>,
 
     /// Handle of the optional shared object file for native functions.
     #[cfg(all(feature = "native-lib", unix))]
@@ -748,10 +758,10 @@ pub struct MiriMachine<'tcx> {
 }
 
 impl<'tcx> MiriMachine<'tcx> {
-    pub(crate) fn queue_irq(&mut self, cpu: usize, handler: Instance<'tcx>) -> u64 {
+    pub(crate) fn queue_irq(&mut self, cpu: usize, vector: u8, source: IrqSource) -> u64 {
         let event_id = self.next_irq_event_id;
         self.next_irq_event_id = self.next_irq_event_id.wrapping_add(1);
-        self.irq_cpus[cpu].pending.push_back(PendingIrq { handler, event_id });
+        self.irq_cpus[cpu].pending.push_back(PendingIrq { vector, event_id, source });
         event_id
     }
 
@@ -770,22 +780,23 @@ impl<'tcx> MiriMachine<'tcx> {
             return None;
         }
 
-        let handler = self.timer_irq_handler.clone()?;
-        Some(self.queue_irq(cpu, handler))
+        self.irq_entry?;
+        let vector = self.timer_vector?;
+        Some(self.queue_irq(cpu, vector, IrqSource::Timer))
     }
 
     pub(crate) fn finish_irq_if_returned(
         &mut self,
         cpu: usize,
         current_stack_depth: usize,
-    ) -> Option<(u64, bool)> {
+    ) -> Option<(u64, u8, IrqSource, bool)> {
         let active = self.irq_cpus[cpu].active.as_ref()?;
         if current_stack_depth > active.stack_depth {
             return None;
         }
         let active = self.irq_cpus[cpu].active.take().unwrap();
         self.irq_cpus[cpu].enabled = active.was_enabled;
-        Some((active.event_id, active.was_enabled))
+        Some((active.event_id, active.vector, active.source, active.was_enabled))
     }
 
     /// Create a new MiriMachine.
@@ -927,7 +938,8 @@ impl<'tcx> MiriMachine<'tcx> {
             irq_cpus: (0..CPU_NUM).map(|_| CpuIrqState::new()).collect(),
             irq_rng,
             next_irq_event_id: 0,
-            timer_irq_handler: None,
+            irq_entry: None,
+            timer_vector: None,
             monotonic_clock: MonotonicClock::new(config.isolated_op == IsolatedOp::Allow),
             #[cfg(all(feature = "native-lib", unix))]
             native_lib: config.native_lib.iter().map(|lib_file_path| {
@@ -2128,8 +2140,9 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
         if let Some(event_id) = ecx.machine.maybe_queue_timer_irq(ecx.machine.threads.active_cpu) {
             if ecx.machine.irq_config.trace() {
                 eprintln!(
-                    "KMiri IRQ: event={event_id} cpu={} action=timer-queued block={} IF={} pending={}",
+                    "KMiri IRQ: event={event_id} cpu={} action=timer-queued vector={} source=Timer block={} IF={} pending={}",
                     ecx.machine.threads.active_cpu,
+                    ecx.machine.timer_vector.unwrap(),
                     ecx.machine.basic_block_count,
                     ecx.machine.irq_cpus[ecx.machine.threads.active_cpu].enabled,
                     ecx.machine.irq_cpus[ecx.machine.threads.active_cpu].pending.len(),

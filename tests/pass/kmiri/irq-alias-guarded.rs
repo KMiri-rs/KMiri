@@ -6,6 +6,8 @@
 #[path = "../../../dev/test_utils/irq.rs"]
 mod irq;
 
+const TIMER_VECTOR: u8 = 40;
+
 static mut STATE: u32 = 0;
 
 extern "Rust" fn handler() {
@@ -14,8 +16,14 @@ extern "Rust" fn handler() {
     }
 }
 
+extern "Rust" fn entry(vector: u8) {
+    assert_eq!(vector, TIMER_VECTOR);
+    handler();
+}
+
 fn main() {
-    irq::register_timer_irq(handler);
+    irq::register_entry(entry);
+    irq::set_timer_vector(TIMER_VECTOR);
     {
         let _guard = irq::IrqGuard::new();
         let r = unsafe { &mut *core::ptr::addr_of_mut!(STATE) };
