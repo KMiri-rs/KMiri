@@ -14,6 +14,7 @@ num_cpus = "1.10.1"
 getrandom_01 = { package = "getrandom", version = "0.1" }
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom_03 = { package = "getrandom", version = "0.3" }
+kmiri-alloc-static-dep = { path = "kmiri-alloc-static-dep" }
 
 [target.'cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))'.dependencies]
 tempfile = "3"
