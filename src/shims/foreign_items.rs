@@ -1166,7 +1166,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
 
             // Rust for Linux symbols
             "rust_helper_krealloc_node_align" | "krealloc_node_align" => {
-                let [old_ptr, new_size, _align, _flags, _nid] =
+                let [old_ptr, new_size, align, flags, _nid] =
                     this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
                 let old_ptr = this.read_pointer(old_ptr)?;
                 let new_size = this.read_target_usize(new_size)?;
@@ -1174,12 +1174,42 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     if !this.ptr_is_null(old_ptr)? {
                         this.free(old_ptr)?;
                     }
+                    // RFL replaces this return value with its own aligned dangling pointer.
                     this.write_null(dest)?;
-                } else if this.ptr_is_null(old_ptr)? {
-                    let res = this.malloc(new_size, AllocInit::Uninit)?;
-                    this.write_pointer(res, dest)?;
                 } else {
-                    let res = this.realloc(old_ptr, new_size)?;
+                    let align = this.read_target_usize(align)?;
+                    let Ok(align) = Align::from_bytes(align) else {
+                        throw_unsup_format!("`{link_name}`: unsupported alignment {align}");
+                    };
+                    // RFL's Kmalloc pads the size to its requested alignment, as required
+                    // by kmalloc's alignment guarantees. Retain fundamental alignment too.
+                    let align = align.max(this.malloc_align(new_size));
+                    let flags = this.read_scalar(flags)?.to_u32()?;
+                    // Linux include/linux/gfp_types.h: ___GFP_ZERO_BIT is 8.
+                    const GFP_ZERO: u32 = 1 << 8;
+                    let init =
+                        if flags & GFP_ZERO != 0 { AllocInit::Zero } else { AllocInit::Uninit };
+                    // Model logical allocations, not NUMA placement or GFP scheduling.
+                    // Linux's full zeroing guarantee requires __GFP_ZERO on every call
+                    // from the initial allocation onward. Reallocation preserves the old
+                    // prefix (including its init mask), and `init` initializes new bytes.
+                    let res = if this.ptr_is_null(old_ptr)? {
+                        this.allocate_ptr(
+                            Size::from_bytes(new_size),
+                            align,
+                            MiriMemoryKind::C.into(),
+                            init,
+                        )?
+                    } else {
+                        this.reallocate_ptr(
+                            old_ptr,
+                            None,
+                            Size::from_bytes(new_size),
+                            align,
+                            MiriMemoryKind::C.into(),
+                            init,
+                        )?
+                    };
                     this.write_pointer(res, dest)?;
                 }
             }
