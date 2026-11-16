@@ -134,6 +134,19 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         link_name: Symbol,
     ) -> InterpResult<'tcx, Option<(&'tcx mir::Body<'tcx>, ty::Instance<'tcx>)>> {
         let this = self.eval_context_mut();
+        match this.lookup_exported_symbol_instance(link_name)? {
+            None => interp_ok(None), // no symbol with this name
+            Some(instance) => interp_ok(Some((this.load_mir(instance.def, None)?, instance))),
+        }
+    }
+
+    /// Like `lookup_exported_symbol`, but does not load the MIR. Exported statics of
+    /// dependency crates have no `mir_for_ctfe`, so loading it would ICE.
+    fn lookup_exported_symbol_instance(
+        &mut self,
+        link_name: Symbol,
+    ) -> InterpResult<'tcx, Option<ty::Instance<'tcx>>> {
+        let this = self.eval_context_mut();
         let tcx = this.tcx.tcx;
 
         // If the result was cached, just return it.
@@ -245,10 +258,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 e.insert(symbol_target.map(|SymbolTarget { instance, .. }| instance))
             }
         };
-        match instance {
-            None => interp_ok(None), // no symbol with this name
-            Some(instance) => interp_ok(Some((this.load_mir(instance.def, None)?, instance))),
-        }
+        interp_ok(instance)
     }
 }
 

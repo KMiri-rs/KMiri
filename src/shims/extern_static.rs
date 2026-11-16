@@ -52,11 +52,11 @@ impl<'tcx> MiriMachine<'tcx> {
     /// imported as extern statics in Rust code.
     /// Allocator symbols use the trick of weak and strong symbols to provide default
     /// allocators, while also allowing users to bring their own allocators.
-    fn add_ostd_allocator_statics(ecx: &mut MiriInterpCx<'tcx>) {
+    fn add_ostd_allocator_statics(ecx: &mut MiriInterpCx<'tcx>) -> InterpResult<'tcx> {
         let symbols = ["__GLOBAL_HEAP_ALLOCATOR_REF", "__GLOBAL_FRAME_ALLOCATOR_REF"];
         for link_name in symbols {
             let link_name = rustc_span::Symbol::intern(link_name);
-            let Some((_, instance)) = ecx.lookup_exported_symbol(link_name).unwrap() else {
+            let Some(instance) = ecx.lookup_exported_symbol_instance(link_name)? else {
                 continue;
             };
             assert!(
@@ -66,10 +66,16 @@ impl<'tcx> MiriMachine<'tcx> {
                 ),
                 "{link_name} must be a exported static"
             );
-            let place = ecx.eval_global(instance).unwrap();
-            let ptr = place.ptr().into_pointer_or_addr().unwrap();
+            // Neither load the static's MIR nor `eval_global` it: both need its
+            // `mir_for_ctfe`, which a dependency crate does not provide. In the full
+            // kernel the allocators live in `aster_core`, and this ICEd with
+            // "does not have a mir_for_ctfe". Refer to the static the same way an
+            // ordinary `static` access does instead.
+            let alloc_id = ecx.tcx.reserve_and_set_static_alloc(instance.def_id());
+            let ptr = ecx.global_root_pointer(rustc_middle::mir::interpret::Pointer::from(alloc_id))?;
             ecx.machine.extern_statics.insert(link_name, ptr);
         }
+        interp_ok(())
     }
 
     /// Sets up the "extern statics" for this machine.
@@ -82,7 +88,7 @@ impl<'tcx> MiriMachine<'tcx> {
             Self::add_weak_symbol(ecx, "environ", environ)?;
         }
 
-        Self::add_ostd_allocator_statics(ecx);
+        Self::add_ostd_allocator_statics(ecx)?;
 
         match &ecx.tcx.sess.target.os {
             Os::Linux => {
