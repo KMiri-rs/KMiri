@@ -19,8 +19,8 @@ LL | fn work(r: &mut u32) {
    = note: stack backtrace:
            0: handler
                at tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
-           1: core::ub_checks::check_language_ub
-               at RUSTLIB/core/src/intrinsics/mod.rs:LL:CC
+           1: entry
+               at tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
            2: <u32 as std::iter::Step>::forward_unchecked
                at RUSTLIB/core/src/iter/range.rs:LL:CC
            3: <std::ops::Range<u32> as std::iter::range::RangeIteratorImpl>::spec_next

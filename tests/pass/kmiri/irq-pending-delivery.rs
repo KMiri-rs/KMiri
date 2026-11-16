@@ -3,6 +3,8 @@
 #[path = "../../../dev/test_utils/irq.rs"]
 mod irq;
 
+const TIMER_VECTOR: u8 = 40;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const WRITER: usize = 1 << (usize::BITS - 1);
@@ -43,12 +45,18 @@ extern "Rust" fn timer_irq_handler() {
     LOCK.store(0, Ordering::Release);
 }
 
+extern "Rust" fn entry(vector: u8) {
+    assert_eq!(vector, TIMER_VECTOR);
+    timer_irq_handler();
+}
+
 fn main() {
+    irq::register_entry(entry);
     let outer_irq = irq::IrqGuard::new();
     let inner_irq = irq::IrqGuard::new();
     let reader = ReadGuard::acquire();
 
-    irq::raise_irq(timer_irq_handler);
+    irq::raise(TIMER_VECTOR);
     assert_eq!(HANDLER_RUNS.load(Ordering::SeqCst), 0);
 
     drop(reader);

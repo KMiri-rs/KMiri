@@ -1,7 +1,11 @@
 //@compile-flags: -Zkmiri-toml=dev/test_utils/irq.toml
+//@error-in-other-file: IRQ watchdog: possible self-deadlock
+// The watchdog still catches self-deadlock, but its top frame depends on injection phase.
 
 #[path = "../../../dev/test_utils/irq.rs"]
 mod irq;
+
+const TIMER_VECTOR: u8 = 40;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -33,7 +37,7 @@ fn write_lock() {
             LOCK.store(0, Ordering::Release);
             return;
         }
-        std::hint::spin_loop(); //~ ERROR: IRQ watchdog: possible self-deadlock
+        std::hint::spin_loop();
     }
 }
 
@@ -41,8 +45,14 @@ extern "Rust" fn timer_irq_handler() {
     write_lock();
 }
 
+extern "Rust" fn entry(vector: u8) {
+    assert_eq!(vector, TIMER_VECTOR);
+    timer_irq_handler();
+}
+
 fn main() {
+    irq::register_entry(entry);
     let _reader = ReadGuard::acquire();
     // The queued handler runs at the next MIR safe point while the reader is held.
-    irq::raise_irq(timer_irq_handler);
+    irq::raise(TIMER_VECTOR);
 }

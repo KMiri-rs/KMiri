@@ -1,0 +1,16 @@
+error: abnormal termination: kern_miri_test_raise_irq: vector 40 raised before IRQ entry was registered
+  --> tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+   |
+LL |     unsafe { kern_miri_test_raise_irq(vector) };
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ abnormal termination occurred here
+   |
+   = note: stack backtrace:
+           0: irq::raise
+               at tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+           1: main
+               at tests/fail/kmiri/irq-raise-without-entry.rs:LL:CC
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+

@@ -1,19 +1,24 @@
-KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=queued block_count=385 pending=1 IF=true
-KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=delivered global_block_count=385 return_block=1 pending=0 IF=0
-error: abnormal termination: IRQ watchdog: possible self-deadlock; event=0 cpu=0 thread=ThreadId(0) global_block_count=10386 handler_blocks=10001 budget=10000 pending=0 IF=false handler_stack=["irq_self_deadlock::write_lock", "irq_self_deadlock::timer_irq_handler"] interrupted_stack=["irq_self_deadlock::irq::raise_irq", "irq_self_deadlock::main", "<fn() as std::ops::FnOnce<()>>::call_once", "std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>", "std::rt::lang_start::<()>::{closure#0}", "std::ops::function::impls::<impl std::ops::FnOnce<()> for &dyn std::ops::Fn() -> i32 + std::marker::Sync + std::panic::RefUnwindSafe>::call_once", "std::panicking::catch_unwind::do_call::<&dyn std::ops::Fn() -> i32 + std::marker::Sync + std::panic::RefUnwindSafe, i32>", "std::panicking::catch_unwind::<i32, &dyn std::ops::Fn() -> i32 + std::marker::Sync + std::panic::RefUnwindSafe>"]
-  --> tests/fail/kmiri/irq-self-deadlock.rs:LL:CC
+KMiri IRQ: cpu=0 action=entry-registered block_count=369
+KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=queued vector=40 source=Test block_count=388 pending=1 IF=true
+KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=delivered vector=40 source=Test global_block_count=388 return_block=1 pending=0 IF=0
+error: abnormal termination: IRQ watchdog: possible self-deadlock; event=0 cpu=0 thread=ThreadId(0) global_block_count=10389 handler_blocks=10001 budget=10000 pending=0 IF=false handler_stack=["std::hint::spin_loop", "irq_self_deadlock::write_lock", "irq_self_deadlock::timer_irq_handler", "irq_self_deadlock::entry"] interrupted_stack=["irq_self_deadlock::irq::raise", "irq_self_deadlock::main", "<fn() as std::ops::FnOnce<()>>::call_once", "std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>", "std::rt::lang_start::<()>::{closure#0}", "std::ops::function::impls::<impl std::ops::FnOnce<()> for &dyn std::ops::Fn() -> i32 + std::marker::Sync + std::panic::RefUnwindSafe>::call_once", "std::panicking::catch_unwind::do_call::<&dyn std::ops::Fn() -> i32 + std::marker::Sync + std::panic::RefUnwindSafe, i32>", "std::panicking::catch_unwind::<i32, &dyn std::ops::Fn() -> i32 + std::marker::Sync + std::panic::RefUnwindSafe>"]
+  --> RUSTLIB/core/src/hint.rs:LL:CC
    |
-LL |         std::hint::spin_loop();
-   |                               ^ abnormal termination occurred here
+LL |             miri_spin_loop();
+   |             ^^^^^^^^^^^^^^^^ abnormal termination occurred here
    |
    = note: stack backtrace:
-           0: write_lock
+           0: std::hint::spin_loop
+               at RUSTLIB/core/src/hint.rs:LL:CC
+           1: write_lock
                at tests/fail/kmiri/irq-self-deadlock.rs:LL:CC
-           1: timer_irq_handler
+           2: timer_irq_handler
                at tests/fail/kmiri/irq-self-deadlock.rs:LL:CC
-           2: irq::raise_irq
+           3: entry
+               at tests/fail/kmiri/irq-self-deadlock.rs:LL:CC
+           4: irq::raise
                at tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
-           3: main
+           5: main
                at tests/fail/kmiri/irq-self-deadlock.rs:LL:CC
 
 note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace

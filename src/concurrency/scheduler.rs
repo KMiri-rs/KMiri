@@ -239,12 +239,12 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         }
 
         let current_stack_depth = this.active_thread_stack().len();
-        if let Some((event_id, was_enabled)) =
+        if let Some((event_id, vector, source, was_enabled)) =
             this.machine.finish_irq_if_returned(cpu, current_stack_depth)
         {
             if this.machine.irq_config.trace() {
                 eprintln!(
-                    "KMiri IRQ: event={event_id} cpu={cpu} action=returned block_count={} IF={}",
+                    "KMiri IRQ: event={event_id} cpu={cpu} action=returned vector={vector} source={source:?} block_count={} IF={}",
                     this.machine.basic_block_count, this.machine.irq_cpus[cpu].enabled
                 );
             }
@@ -266,10 +266,14 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             let pending = this.machine.irq_cpus[cpu].pending.pop_front().unwrap();
             let interrupted_depth = this.active_thread_stack().len();
             let event_id = pending.event_id;
-            let handler = pending.handler;
+            let vector = pending.vector;
+            let source = pending.source;
+            let entry = this.machine.irq_entry.unwrap();
             let return_block = loc.block;
             this.machine.irq_cpus[cpu].active = Some(crate::machine::ActiveIrq {
                 event_id,
+                vector,
+                source,
                 stack_depth: interrupted_depth,
                 was_enabled: true,
                 blocks: 0,
@@ -277,7 +281,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             this.machine.irq_cpus[cpu].enabled = false;
             if this.machine.irq_config.trace() {
                 eprintln!(
-                    "KMiri IRQ: event={event_id} cpu={cpu} thread={:?} action=delivered global_block_count={} return_block={} pending={} IF=0",
+                    "KMiri IRQ: event={event_id} cpu={cpu} thread={:?} action=delivered vector={vector} source={source:?} global_block_count={} return_block={} pending={} IF=0",
                     this.machine.threads.active_thread(),
                     this.machine.basic_block_count,
                     return_block.index(),
@@ -285,9 +289,9 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 );
             }
             this.call_function(
-                handler,
+                entry,
                 ExternAbi::Rust,
-                &[],
+                &[ImmTy::from_uint(vector, this.machine.layouts.u8)],
                 None,
                 ReturnContinuation::Goto {
                     ret: Some(return_block),

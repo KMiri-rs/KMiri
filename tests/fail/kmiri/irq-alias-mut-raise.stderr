@@ -1,6 +1,7 @@
-KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=queued block_count=369 pending=1 IF=true
-KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=delivered global_block_count=369 return_block=1 pending=0 IF=0
-KMiri IRQ: event=0 cpu=0 action=returned block_count=371 IF=true
+KMiri IRQ: cpu=0 action=entry-registered block_count=369
+KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=queued vector=40 source=Test block_count=372 pending=1 IF=true
+KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=delivered vector=40 source=Test global_block_count=372 return_block=1 pending=0 IF=0
+KMiri IRQ: event=0 cpu=0 action=returned vector=40 source=Test block_count=377 IF=true
 error: Undefined Behavior: attempting a write access using <TAG> at ALLOC[0x0], but that tag does not exist in the borrow stack for this location
   --> tests/fail/kmiri/irq-alias-mut-raise.rs:LL:CC
    |
