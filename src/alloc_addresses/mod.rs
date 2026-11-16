@@ -19,7 +19,7 @@ use crate::alloc_addresses::address_generator::align_addr;
 use crate::concurrency::VClock;
 use crate::diagnostics::SpanDedupDiagnostic;
 use crate::helpers::adjust_stack_addr;
-use crate::mirch::{CodeSection, PageState, kernel_code_paddr_to_vaddr};
+use crate::mirch::{CodeSection, PageState, TypedKind, kernel_code_paddr_to_vaddr};
 use crate::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -397,7 +397,14 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let page_index = paddr / mirch::page_size();
         let page_info = *mirch::physical_mem().page_states.get(page_index)?;
 
-        if let PageState::Typed { page_type: _, slot_size } = page_info {
+        if let PageState::Typed { page_type, slot_size } = page_info {
+            // Objects in `Heap` pages only come into existence through
+            // `kern_miri_alloc_heap_slot`. An address in a free slot must not
+            // create one: the one-past-the-end pointer of an object is the
+            // address of the next slot.
+            if page_type == TypedKind::Heap {
+                return None;
+            }
             // A heap object gets an allocation of exactly its own size, like a
             // Rust heap allocation in Miri; other typed slots span the slot.
             let size = mirch::physical_mem_mut().pending_heap_slot_size.take().unwrap_or(slot_size);
@@ -436,13 +443,16 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         interp_ok(())
     }
 
-    /// Creates the allocation for a heap object that the kernel placed
-    /// directly on frames from its frame allocator instead of in a slab slot.
+    /// Creates the allocation for a new heap object whose lifetime the kernel
+    /// reports explicitly. The object is either
     ///
-    /// Such frames are untyped pages, so there is no slot to look up: the
-    /// object gets an allocation of exactly `size` bytes starting at its first
-    /// page. Returns `false` if `vaddr` is not on an untyped page.
-    fn alloc_large_heap_object(&self, vaddr: u64, size: usize) -> InterpResult<'tcx, bool> {
+    /// - in a slot of a `Heap` page, or
+    /// - directly on frames from the frame allocator (untyped pages), if it is
+    ///   too large for a slot.
+    ///
+    /// It gets an allocation of exactly `size` bytes. Returns `false` if
+    /// `vaddr` is on any other kind of page.
+    fn alloc_heap_object(&self, vaddr: u64, size: usize) -> InterpResult<'tcx, bool> {
         let this = self.eval_context_ref();
         if !this.machine.is_page_table_enabled() {
             return interp_ok(false);
@@ -455,42 +465,55 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let Some(paddr) = paddr else {
             return interp_ok(false);
         };
-        let is_untyped = |paddr: usize| {
-            mirch::physical_mem().page_states.get(paddr / page_size) == Some(&PageState::Untyped)
-        };
-        if !is_untyped(paddr) {
-            return interp_ok(false);
-        }
+        let page_state = |paddr: usize| mirch::physical_mem().page_states.get(paddr / page_size);
 
-        if paddr % page_size != 0 {
-            throw_unsup_format!(
-                "KMiri: large heap object at {vaddr:#x} does not start on a page boundary"
-            );
-        }
-        let end = paddr + size;
-        if let Some(bad) = (paddr..end).step_by(page_size).find(|page| !is_untyped(*page)) {
-            throw_unsup_format!(
-                "KMiri: {size}-byte large heap object at {vaddr:#x} covers the page at paddr {bad:#x}, which is not an allocated untyped page"
-            );
-        }
+        // The range that must not hold a live allocation, and the alignment.
+        let (reserved, align) = match page_state(paddr) {
+            Some(PageState::Typed { page_type: TypedKind::Heap, slot_size }) => {
+                let slot_size = *slot_size;
+                if paddr % slot_size != 0 || size > slot_size {
+                    throw_unsup_format!(
+                        "KMiri: {size}-byte heap object at {vaddr:#x} does not fit a {slot_size}-byte heap slot"
+                    );
+                }
+                (slot_size, slot_size)
+            }
+            Some(PageState::Untyped) => {
+                if paddr % page_size != 0 {
+                    throw_unsup_format!(
+                        "KMiri: large heap object at {vaddr:#x} does not start on a page boundary"
+                    );
+                }
+                let bad = (paddr..paddr + size)
+                    .step_by(page_size)
+                    .find(|page| page_state(*page) != Some(&PageState::Untyped));
+                if let Some(bad) = bad {
+                    throw_unsup_format!(
+                        "KMiri: {size}-byte large heap object at {vaddr:#x} covers the page at paddr {bad:#x}, which is not an allocated untyped page"
+                    );
+                }
+                (size, page_size)
+            }
+            _ => return interp_ok(false),
+        };
         {
             let global_state = this.machine.alloc_addresses.borrow();
             let pos = global_state.int_to_ptr_map.partition_point(|(addr, _)| *addr < paddr as u64);
             if let Some((live, _)) = global_state.int_to_ptr_map.get(pos) {
-                if *live < end as u64 {
+                if *live < (paddr + reserved) as u64 {
                     throw_unsup_format!(
-                        "KMiri: {size}-byte large heap object at {vaddr:#x} overlaps a live allocation at paddr {live:#x}"
+                        "KMiri: {size}-byte heap object at {vaddr:#x} overlaps a live allocation at paddr {live:#x}"
                     );
                 }
             }
         }
-        this.kernel_allocation_at(paddr, size, page_size);
+        this.kernel_allocation_at(paddr, size, align);
         interp_ok(true)
     }
 
     fn alloc_heap_slot(&self, ptr: Pointer, size: usize) -> InterpResult<'tcx, ()> {
         let this = self.eval_context_ref();
-        if this.alloc_large_heap_object(ptr.addr().bytes(), size)? {
+        if this.alloc_heap_object(ptr.addr().bytes(), size)? {
             return interp_ok(());
         }
         // Look the slot up by address, so that a fresh allocation of `size`

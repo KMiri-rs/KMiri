@@ -492,6 +492,10 @@ pub enum TypedKind {
     PageTable = 2,
     Stack = 3,
     Interpreter = 4,
+    /// A slab page of the kernel heap. Unlike in a `Slab` page, the objects
+    /// in its slots are created and ended explicitly, by
+    /// `kern_miri_alloc_heap_slot` and `kern_miri_dealloc_heap_slot`.
+    Heap = 5,
 }
 
 impl TypedKind {
@@ -501,6 +505,7 @@ impl TypedKind {
             2 => Some(TypedKind::PageTable),
             3 => Some(TypedKind::Stack),
             4 => Some(TypedKind::Interpreter),
+            5 => Some(TypedKind::Heap),
             _ => None,
         }
     }
