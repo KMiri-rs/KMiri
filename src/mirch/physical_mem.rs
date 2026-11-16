@@ -399,6 +399,9 @@ pub struct PhysicalMemory {
     pub page_states: Vec<PageState>,
     pub init_masks: BTreeMap<usize, Allocation<Provenance, (), MiriAllocBytes>>,
     pub heap_slot_next: BTreeMap<usize, usize>,
+    /// Object size for the heap slot allocation being created by
+    /// `kern_miri_alloc_heap_slot`.
+    pub pending_heap_slot_size: Option<usize>,
     pub page_table: Option<PageTable>,
 }
 
@@ -409,6 +412,7 @@ impl PhysicalMemory {
             page_states: Vec::new(),
             init_masks: BTreeMap::new(),
             heap_slot_next: BTreeMap::new(),
+            pending_heap_slot_size: None,
             page_table: None,
         }
     }
@@ -429,6 +433,7 @@ impl PhysicalMemory {
             page_states,
             init_masks: BTreeMap::new(),
             heap_slot_next: BTreeMap::new(),
+            pending_heap_slot_size: None,
             page_table: None,
         }
     }

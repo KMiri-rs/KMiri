@@ -24,10 +24,10 @@ if (cd $(PROJ)/tests/irq-rcu-uaf && $(ASTERINAS_ENV_VARS) cargo osdk miri test) 
 	cat "$$log"; rm -f "$$log"; echo "irq-rcu-uaf unexpectedly completed without aborting"; exit 1; \
 fi; \
 cat "$$log"; \
-if awk '/Undefined Behavior: deallocating while item / && / is weakly protected/ { found = 1 } END { exit !found }' "$$log"; then \
-	echo "Observed expected RCU weak-protection diagnostic."; rm -f "$$log"; \
+if awk '/Undefined Behavior: / && /dangling reference \(use-after-free\)/ { found = 1 } END { exit !found }' "$$log"; then \
+	echo "Observed expected RCU use-after-free diagnostic."; rm -f "$$log"; \
 else \
-	rm -f "$$log"; echo "irq-rcu-uaf failed without the expected weak-protection diagnostic"; exit 1; \
+	rm -f "$$log"; echo "irq-rcu-uaf failed without the expected use-after-free diagnostic"; exit 1; \
 fi
 endef
 
@@ -63,7 +63,8 @@ endif
 
 ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    task-switch-back task-exit-last task-exit-with-runnable \
-                   irq-simulation irq-trap-path irq-deadlock irq-rcu-uaf
+                   irq-simulation irq-trap-path irq-deadlock irq-rcu-uaf \
+                   irq-rcu-uaf-lifo heap-box-drop
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \

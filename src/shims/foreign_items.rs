@@ -1059,17 +1059,18 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 dealloc_pages(this, paddr, count)?;
             }
             "kern_miri_dealloc_heap_slot" => {
-                let [ptr, slot_size] =
+                let [ptr, size] =
                     this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
                 let ptr = this.read_pointer(ptr)?;
-                let slot_size = this.read_target_usize(slot_size)? as usize;
-                this.dealloc_heap_slot(ptr, slot_size)?;
+                let size = this.read_target_usize(size)? as usize;
+                this.dealloc_heap_slot(ptr, size)?;
             }
             "kern_miri_alloc_heap_slot" => {
-                let [ptr] =
+                let [ptr, size] =
                     this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
                 let ptr = this.read_pointer(ptr)?;
-                this.alloc_heap_slot(ptr)?;
+                let size = this.read_target_usize(size)? as usize;
+                this.alloc_heap_slot(ptr, size)?;
             }
             "kern_miri_set_heap_slot_next" => {
                 let [ptr, next] =

@@ -398,7 +398,10 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let page_info = *mirch::physical_mem().page_states.get(page_index)?;
 
         if let PageState::Typed { page_type: _, slot_size } = page_info {
-            return Some(self.kernel_allocation_at(paddr, slot_size, slot_size));
+            // A heap object gets an allocation of exactly its own size, like a
+            // Rust heap allocation in Miri; other typed slots span the slot.
+            let size = mirch::physical_mem_mut().pending_heap_slot_size.take().unwrap_or(slot_size);
+            return Some(self.kernel_allocation_at(paddr, size, slot_size));
         }
 
         None
@@ -407,7 +410,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     fn dealloc_heap_slot(
         &mut self,
         ptr: Pointer,
-        slot_size: usize,
+        size: usize,
     ) -> InterpResult<'tcx, ()> {
         let this = self.eval_context_ref();
         let (alloc_id, _, _) = this.ptr_get_alloc_id(ptr, 0)?;
@@ -415,32 +418,42 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             return interp_ok(());
         }
 
-        // The pointer passed back by the kernel allocator may have been
-        // invalidated while the allocator wrote its freelist metadata. Use
-        // the allocation's root tag for the actual deallocation, just as
-        // Miri's allocator shims do with their allocation pointer.
-        let root_tag = this
-            .machine
-            .borrow_tracker
-            .as_ref()
-            .unwrap()
-            .borrow_mut()
-            .root_ptr_tag(alloc_id, &this.machine);
-        let ptr = Pointer::new(
-            Some(Provenance::Concrete { alloc_id, tag: root_tag }),
-            ptr.addr(),
-        );
+        // Deallocate through the pointer the kernel passed to
+        // `GlobalAlloc::dealloc`, as Miri's own `__rust_dealloc` shim does.
+        // The freelist link no longer lives in the slot (see
+        // `kern_miri_set_heap_slot_next`), so this pointer is still valid.
+        // Using the root tag instead would make the deallocation's write
+        // access pop the item of the very `Box` being dropped, which is
+        // weakly protected while it is passed by value (e.g. to `mem::drop`),
+        // and report UB for every such drop.
+        let align = this.get_alloc_info(alloc_id).align;
         let kind = MemoryKind::Machine(MiriMemoryKind::Kernel);
         self.eval_context_mut().deallocate_ptr(
             ptr,
-            Some((Size::from_bytes(slot_size as u64), Align::from_bytes(slot_size as u64).unwrap())),
+            Some((Size::from_bytes(size as u64), align)),
             kind,
         )?;
         interp_ok(())
     }
 
-    fn alloc_heap_slot(&self, ptr: Pointer) -> InterpResult<'tcx, ()> {
-        self.eval_context_ref().ptr_get_alloc_id(ptr, 0)?;
+    fn alloc_heap_slot(&self, ptr: Pointer, size: usize) -> InterpResult<'tcx, ()> {
+        let this = self.eval_context_ref();
+        // Look the slot up by address, so that a fresh allocation of `size`
+        // bytes is created here even if `ptr` still carries the provenance of
+        // the object that previously lived in this slot.
+        mirch::physical_mem_mut().pending_heap_slot_size = Some(size);
+        let alloc_id = this.alloc_id_from_addr(ptr.addr().bytes(), 0);
+        let reused = mirch::physical_mem_mut().pending_heap_slot_size.take().is_some();
+        let Some(alloc_id) = alloc_id else {
+            throw_unsup_format!("KMiri: heap slot at {:#x} is not in a typed slab page", ptr.addr().bytes());
+        };
+        let live_size = this.get_alloc_info(alloc_id).size.bytes();
+        if reused && live_size != size as u64 {
+            throw_unsup_format!(
+                "KMiri: heap slot at {:#x} already has a live {live_size}-byte allocation; cannot hand out a {size}-byte object",
+                ptr.addr().bytes()
+            );
+        }
         interp_ok(())
     }
 
