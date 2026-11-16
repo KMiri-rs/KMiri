@@ -36,6 +36,16 @@ pub struct KMiriConfigToml {
     /// Configuration for KMiri's optional interrupt model.
     #[serde(default)]
     irq: IrqConfigToml,
+    /// Stacked Borrows only: a zero-size retag keeps the tag of the pointer it
+    /// is derived from, instead of getting a fresh tag that is in no borrow
+    /// stack.
+    ///
+    /// By default, a reference to a zero-sized place cannot be turned back
+    /// into a pointer that accesses memory. Crates that encode a data pointer
+    /// in such a reference do exactly that (e.g. `bitvec`'s `&BitSlice`) and
+    /// are reported as undefined behavior, although Tree Borrows accepts them.
+    #[serde(default)]
+    sb_zero_size_retag_keeps_tag: bool,
 }
 
 /// Configuration for deterministic and randomized interrupt injection.
@@ -147,6 +157,10 @@ impl KMiriConfigToml {
 
     pub fn irq(&self) -> &IrqConfigToml {
         &self.irq
+    }
+
+    pub fn sb_zero_size_retag_keeps_tag(&self) -> bool {
+        self.sb_zero_size_retag_keeps_tag
     }
 }
 

@@ -729,6 +729,15 @@ trait EvalContextPrivExt<'tcx, 'ecx>: crate::MiriInterpCxExt<'tcx> {
                 place.ptr(),
                 place.layout.ty,
             );
+            // kmiri: optionally the reference just keeps the tag it was derived from.
+            if this
+                .machine
+                .kmiri_toml
+                .as_ref()
+                .is_some_and(|toml| toml.sb_zero_size_retag_keeps_tag())
+            {
+                return interp_ok(place.ptr().provenance);
+            }
             // Don't update any stacks for a zero-sized access; borrow stacks are per-byte and this
             // touches no bytes so there is no stack to put this tag in.
             // However, if the pointer for this operation points at a real allocation we still

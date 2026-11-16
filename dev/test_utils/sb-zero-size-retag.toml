@@ -1,0 +1,3 @@
+page_table = false
+total_mem_size = 0x8000000
+sb_zero_size_retag_keeps_tag = true
