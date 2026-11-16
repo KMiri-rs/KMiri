@@ -2392,6 +2392,7 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
 
         // Resumes the stack pointer for return value.
         let thread = ecx.machine.threads.active_thread_mut();
+        thread.popping_frame = true;
         if let Some(record) = thread.stack_addr_records.last().cloned() {
             // record.addr is stack_addr_for_ret_value
             *thread.next_stack_vaddr.borrow_mut() = record.addr;
@@ -2430,6 +2431,7 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
 
         // Check the reserved space of return value is correct, ensuring the stack address is correct.
         let thread = ecx.machine.threads.active_thread_mut();
+        thread.popping_frame = false;
         if let Some(record) = thread.stack_addr_records.pop() {
             let current_sp = *thread.next_stack_vaddr.borrow();
 

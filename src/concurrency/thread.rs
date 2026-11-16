@@ -1,6 +1,7 @@
 //! Implements threads.
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::mem;
 use std::ops::Range;
 use std::task::Poll;
@@ -21,6 +22,7 @@ use rustc_target::spec::Os;
 
 use crate::concurrency::GlobalDataRaceHandler;
 use crate::concurrency::scheduler::SchedulingAction;
+use crate::helpers::adjust_stack_addr;
 use crate::mirch::{
     self, config_stack_mem_size, kernel_code_paddr_to_vaddr, kernel_stack_end_addr, total_mem_size,
 };
@@ -186,6 +188,16 @@ pub struct Thread<'tcx> {
     /// The stack bottom of the current thread.
     pub(crate) stack_bottom: u64,
 
+    /// The live stack allocations of this thread, keyed by virtual address.
+    /// When one of them dies, `next_stack_vaddr` moves back up to the lowest
+    /// one that is left (see `reclaim_stack_addr`).
+    pub(crate) live_stack_allocs: RefCell<BTreeMap<u64, AllocId>>,
+
+    /// True while the top frame is being popped, i.e. between
+    /// `before_stack_pop` and `after_stack_pop`. During that time
+    /// `next_stack_vaddr` is managed by the frame pop itself.
+    pub(crate) popping_frame: bool,
+
     /// A span that explains where the thread (or more specifically, its current root
     /// frame) "comes from".
     pub(crate) origin_span: Span,
@@ -338,6 +350,31 @@ impl<'tcx> std::fmt::Debug for Thread<'tcx> {
 }
 
 impl<'tcx> Thread<'tcx> {
+    /// Called when the stack allocation `dead_id` at `vaddr` dies.
+    ///
+    /// Moves the stack pointer back up to the lowest stack allocation that is
+    /// still live, but not above the base of the top frame (the caller's
+    /// frames and the slot reserved for the return value stay untouched).
+    /// Without this, a loop that makes a local live and dead again would
+    /// take a new stack address in every iteration until the stack is full.
+    pub(crate) fn reclaim_stack_addr(&mut self, vaddr: u64, dead_id: AllocId) {
+        let live = self.live_stack_allocs.get_mut();
+        if live.get(&vaddr) != Some(&dead_id) {
+            // Not a stack allocation of this thread.
+            return;
+        }
+        live.remove(&vaddr);
+        if self.popping_frame {
+            return;
+        }
+        let Some(record) = self.stack_addr_records.last() else {
+            return;
+        };
+        let frame_base = adjust_stack_addr(record.ret_ty_size, record.ret_ty_align, record.addr);
+        let lowest_live = live.first_key_value().map_or(frame_base, |(addr, _)| *addr);
+        *self.next_stack_vaddr.get_mut() = frame_base.min(lowest_live);
+    }
+
     fn new(
         name: Option<&str>,
         on_stack_empty: Option<StackEmptyCallback<'tcx>>,
@@ -351,6 +388,8 @@ impl<'tcx> Thread<'tcx> {
             stack_addr_records: Vec::new(),
             next_stack_vaddr: RefCell::new(stack_range.end),
             stack_bottom: stack_range.start,
+            live_stack_allocs: RefCell::new(BTreeMap::new()),
+            popping_frame: false,
             origin_span: DUMMY_SP,
             top_user_relevant_frame: None,
             join_status: ThreadJoinStatus::Joinable,
@@ -370,6 +409,8 @@ impl VisitProvenance for Thread<'_> {
             stack_addr_records: _,
             next_stack_vaddr: _,
             stack_bottom: _,
+            live_stack_allocs: _,
+            popping_frame: _,
             origin_span: _,
             top_user_relevant_frame: _,
             state: _,
