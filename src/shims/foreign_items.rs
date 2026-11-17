@@ -1182,6 +1182,33 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 //     // }
                 // }
             }
+            // x86 port I/O. No device is modelled behind any port, so the bus
+            // floats, as on a PC where nothing decodes the port: a read returns
+            // all ones for the access width and a write is dropped. A kernel's
+            // drivers then take their own "device absent" paths.
+            "kern_miri_port_read" => {
+                let [port, size] =
+                    this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let _port = this.read_scalar(port)?.to_u16()?;
+                let size = this.read_target_usize(size)?;
+                let value: u32 = match size {
+                    1 => 0xff,
+                    2 => 0xffff,
+                    4 => 0xffff_ffff,
+                    _ => throw_unsup_format!("`{link_name}`: unsupported access size {size}"),
+                };
+                this.write_scalar(Scalar::from_u32(value), dest)?;
+            }
+            "kern_miri_port_write" => {
+                let [port, size, value] =
+                    this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let _port = this.read_scalar(port)?.to_u16()?;
+                let size = this.read_target_usize(size)?;
+                let _value = this.read_scalar(value)?.to_u32()?;
+                if !matches!(size, 1 | 2 | 4) {
+                    throw_unsup_format!("`{link_name}`: unsupported access size {size}");
+                }
+            }
             "kern_miri_copy_untyped" => {
                 let [dst, src, len] =
                     this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
