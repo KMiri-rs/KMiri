@@ -1,0 +1,16 @@
+# KMiri configuration for the full Asterinas kernel (`make -C kmiri asterinas-kernel`).
+page_table = true
+total_mem_size = 0x800_0000
+# The kernel uses `bitvec` in many places (CPU sets, the scheduler, block I/O,
+# file systems). Stacked Borrows rejects how `bitvec` encodes its data pointer
+# in a reference to a zero-sized type.
+sb_zero_size_retag_keeps_tag = true
+
+[irq]
+enabled = true
+tick_interval_basic_blocks = 0
+inject_at_basic_blocks = []
+random_injection_rate = 0.0
+random_seed = 0
+handler_budget_basic_blocks = 10000
+trace = false
