@@ -1828,6 +1828,11 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
                 ecx.machine.get_default_alloc_params(),
             );
 
+            // The allocation in the pseudo physical memory is created writable. Keep the
+            // mutability of the static: a `static` without interior mutability is read-only,
+            // and writing to it is undefined behavior no matter how the pointer was obtained.
+            new_allocation.mutability = origin_alloc.mutability;
+
             let alloc_range =
                 rustc_middle::mir::interpret::alloc_range(Size::ZERO, origin_alloc.size());
             let init_mask = origin_alloc.init_mask();
