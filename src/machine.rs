@@ -622,6 +622,9 @@ pub struct MiriMachine<'tcx> {
     pub(crate) foreign_symbol_resolution_cache: RefCell<FxHashMap<Symbol, bool>>,
     /// Physical addresses for unresolved foreign symbols, configured through `kmiri.toml`.
     pub(crate) foreign_symbol_addr_map: FxHashMap<Symbol, u64>,
+    /// KMiri: `DefId` of the `unwinding` crate's `_Unwind_RaiseException`, if it is linked.
+    /// The outer `None` means it has not been looked up yet.
+    pub(crate) kmiri_raise_exception: Option<Option<DefId>>,
 
     /// The set of function instances discovered from the entry point.
     pub(crate) reachable_function_instances: reachability::Reachability,
@@ -908,6 +911,7 @@ impl<'tcx> MiriMachine<'tcx> {
             profiler,
             string_cache: Default::default(),
             exported_symbols_cache: FxHashMap::default(),
+            kmiri_raise_exception: None,
             foreign_symbol_resolution_cache: RefCell::new(FxHashMap::default()),
             foreign_symbol_addr_map: {
                 let mut map: FxHashMap<Symbol, u64> = config
@@ -1457,6 +1461,15 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
             let args = MiriInterpCx::copy_fn_args(args); // FIXME: Should `InPlace` arguments be reset to uninit?
             let link_name = Symbol::intern(ecx.tcx.symbol_name(instance).name);
             return ecx.emulate_foreign_item(link_name, abi, &args, dest, ret, unwind);
+        }
+
+        // KMiri: the `unwinding` crate's `_Unwind_RaiseException` is a Rust function, but its
+        // body is a DWARF unwinder (reads `.eh_frame`, restores registers with inline asm) that
+        // cannot run here. Model it instead; see `kmiri_raise_exception`.
+        if ecx.machine.kmiri_toml.is_some() && ecx.is_kmiri_raise_exception(instance)? {
+            let args = MiriInterpCx::copy_fn_args(args);
+            ecx.kmiri_raise_exception(abi, &args, dest, ret, unwind)?;
+            return interp_ok(None);
         }
 
         if ecx.machine.data_race.as_genmc_ref().is_some()

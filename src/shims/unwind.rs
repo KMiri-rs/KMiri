@@ -12,8 +12,10 @@
 //!   gets popped *during unwinding*, we take the panic payload and store it according to the extra
 //!   metadata we remembered when pushing said frame.
 
-use rustc_abi::ExternAbi;
-use rustc_middle::mir;
+use rustc_abi::{CanonAbi, ExternAbi};
+use rustc_middle::{mir, ty};
+use rustc_span::Symbol;
+use rustc_target::callconv::FnAbi;
 use rustc_target::spec::PanicStrategy;
 
 use crate::*;
@@ -108,6 +110,91 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         }
 
         interp_ok(())
+    }
+
+    /// KMiri: is `instance` the `unwinding` crate's `_Unwind_RaiseException`?
+    fn is_kmiri_raise_exception(&mut self, instance: ty::Instance<'tcx>) -> InterpResult<'tcx, bool> {
+        let this = self.eval_context_mut();
+        let def_id = match this.machine.kmiri_raise_exception {
+            Some(def_id) => def_id,
+            None => {
+                let def_id = this
+                    .lookup_exported_symbol_instance(Symbol::intern("_Unwind_RaiseException"))?
+                    .map(|instance| instance.def_id());
+                this.machine.kmiri_raise_exception = Some(def_id);
+                def_id
+            }
+        };
+        interp_ok(def_id == Some(instance.def_id()))
+    }
+
+    /// KMiri: `_Unwind_RaiseException(exception: *mut UnwindException) -> UnwindReasonCode`
+    /// of the `unwinding` crate (OSTD's `begin_panic` ends here).
+    ///
+    /// Natively this is a two-phase unwinder. Phase 1 walks up the stack asking each frame's
+    /// personality routine for a handler and, if there is none, returns `END_OF_STACK` without
+    /// unwinding anything. Phase 2 unwinds to the handler and passes `exception` to its landing
+    /// pad. Here phase 1 walks Miri's stack and phase 2 is Miri's own unwinding, so cleanup
+    /// blocks, `catch_unwind` and the "unwinding past a frame that does not allow unwinding"
+    /// check are Miri's. The Rust code around this call (wrapping the payload, the class check
+    /// in `catch_unwind`'s `do_catch`) runs unchanged.
+    ///
+    /// Handlers in phase 1 are what the personality routine reports as `HANDLER_FOUND`:
+    /// - a frame pushed by `catch_unwind` (a catch landing pad);
+    /// - a call site whose unwind action is `Terminate` (rustc emits a filter landing pad,
+    ///   which phase 1 also reports as a handler; phase 2 then aborts there).
+    /// A call site whose unwind action is `Unreachable` (callee declared not to unwind) is
+    /// not a handler, so the search goes on past it. Unwinding through such a frame is
+    /// language UB; natively phase 1 may stop there or pass through depending on how the
+    /// frame was compiled. If a handler exists further up, Miri reports that UB when phase 2
+    /// reaches the frame.
+    ///
+    /// Not modelled: frames KMiri pushes to deliver an interrupt are walked through like
+    /// ordinary calls, so a `begin_panic` in an interrupt handler could find a `catch_unwind`
+    /// in the interrupted code; natively the unwinder would have to cross the trap frame.
+    fn kmiri_raise_exception(
+        &mut self,
+        abi: &FnAbi<'tcx, ty::Ty<'tcx>>,
+        args: &[OpTy<'tcx>],
+        dest: &PlaceTy<'tcx>,
+        ret: Option<mir::BasicBlock>,
+        unwind: mir::UnwindAction,
+    ) -> InterpResult<'tcx> {
+        let this = self.eval_context_mut();
+        // Not `check_shim_sig_lenient`: that rejects symbols the program defines itself, and
+        // taking over the program's own definition is the point here.
+        if abi.conv != CanonAbi::C {
+            throw_ub_format!("`_Unwind_RaiseException` called with calling convention {:?}", abi.conv);
+        }
+        let [exception] = args else {
+            throw_ub_format!("`_Unwind_RaiseException` called with {} arguments, expected 1", args.len());
+        };
+
+        // Phase 1. `action` is how the call site in `frame` handles an unwind coming out of
+        // the callee; it applies before `frame` itself is popped.
+        let mut action = unwind;
+        let mut handler_found = false;
+        for frame in this.active_thread_stack().iter().rev() {
+            if matches!(action, mir::UnwindAction::Terminate(_)) || frame.extra.catch_unwind.is_some() {
+                handler_found = true;
+                break;
+            }
+            match frame.return_cont() {
+                ReturnContinuation::Goto { unwind, .. } => action = unwind,
+                ReturnContinuation::Stop { .. } => break,
+            }
+        }
+
+        if handler_found {
+            // Phase 2: the payload `catch_unwind` passes to `catch_fn` is the exception
+            // pointer, as on a native landing pad.
+            this.handle_miri_start_unwind(exception)?;
+            this.unwind_to_block(unwind)
+        } else {
+            const END_OF_STACK: i128 = 5; // `UnwindReasonCode::END_OF_STACK`
+            this.write_scalar(Scalar::from_int(END_OF_STACK, dest.layout.size), dest)?;
+            this.return_to_block(ret)
+        }
     }
 
     fn handle_stack_pop_unwind(
