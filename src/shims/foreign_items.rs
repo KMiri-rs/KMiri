@@ -618,7 +618,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
             }
 
             // Standard C allocation
-            "malloc" => {
+            "malloc" | "__libc_malloc" => {
                 let [size] = this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
                 let size = this.read_target_usize(size)?;
                 if size <= this.max_size_of_val().bytes() {
@@ -632,7 +632,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     this.write_null(dest)?;
                 }
             }
-            "calloc" => {
+            "calloc" | "__libc_calloc" => {
                 let [items, elem_size] =
                     this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
                 let items = this.read_target_usize(items)?;
@@ -648,7 +648,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     this.write_null(dest)?;
                 }
             }
-            "free" => {
+            "free" | "__libc_free" => {
                 let [ptr] = this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
                 let ptr = this.read_pointer(ptr)?;
                 this.free(ptr)?;
@@ -780,7 +780,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     dest,
                 )?;
             }
-            "memcpy" => {
+            "memcpy" | "__GI_memcpy" | "__builtin_memcpy" => {
                 let [ptr_dest, ptr_src, n] =
                     this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
                 let ptr_dest = this.read_pointer(ptr_dest)?;
@@ -811,7 +811,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 this.mem_copy(ptr_src, ptr_dest, Size::from_bytes(n), true)?;
                 this.write_pointer(ptr_dest, dest)?;
             }
-            "memset" => {
+            "memset" | "__GI_memset" | "__builtin_memset" => {
                 let [ptr_dest, val, n] =
                     this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
                 let ptr_dest = this.read_pointer(ptr_dest)?;
