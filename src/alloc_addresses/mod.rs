@@ -506,13 +506,14 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             let boot_pt = false;
             let paddr_fallback = || {
                 // log!("[alloc_id_from_addr - page_walk_or] vaddr={vaddr:#x}");
-                mirch::try_kernel_code_vaddr_to_paddr(vaddr).unwrap_or_else(|| {
-                    // boot_pt = true;
-                    mirch::try_boot_pt_vaddr_to_paddr(vaddr).unwrap()
-                })
+                mirch::try_kernel_code_vaddr_to_paddr(vaddr)
+                    .or_else(|| mirch::try_boot_pt_vaddr_to_paddr(vaddr))
             };
-            let paddr =
-                mirch::page_walk_or(vaddr, || unreachable!()).unwrap_or_else(paddr_fallback) as u64;
+            // An address that neither the page table nor the two linear mappings cover
+            // belongs to no allocation, e.g. a CPU-local variable addressed through a
+            // base register that is still 0 (Asterinas #1069). Report it as dangling.
+            let paddr = mirch::page_walk_or(vaddr, || unreachable!()).or_else(paddr_fallback)?
+                as u64;
             if boot_pt {
                 log!("[alloc_id_from_addr] boot_pt paddr={paddr:#x} size={size}");
             }
