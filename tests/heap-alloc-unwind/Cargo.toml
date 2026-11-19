@@ -1,0 +1,13 @@
+[package]
+name = "heap-alloc-unwind"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies.ostd]
+path = "../../asterinas/ostd"
+
+[dependencies.osdk-heap-allocator]
+path = "../../asterinas/osdk/deps/heap-allocator"
+
+[workspace]
+exclude = ["target/osdk/base", "target/osdk/test-base"]
