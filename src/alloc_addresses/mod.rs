@@ -398,6 +398,23 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let page_info = *mirch::physical_mem().page_states.get(page_index)?;
 
         if let PageState::Typed { page_type: _, slot_size } = page_info {
+            // The address may lie in a slot past the end of the live object
+            // there, e.g. one past the end of a `Vec` buffer that is smaller
+            // than its slot. Such an address is in no allocation (Miri does not
+            // recognize an allocation at its end address either), so do not
+            // create a second allocation at the slot start.
+            let slot_start = (paddr - paddr % slot_size) as u64;
+            let occupied = self
+                .eval_context_ref()
+                .machine
+                .alloc_addresses
+                .borrow()
+                .int_to_ptr_map
+                .binary_search_by_key(&slot_start, |(addr, _)| *addr)
+                .is_ok();
+            if occupied {
+                return None;
+            }
             // A heap object gets an allocation of exactly its own size, like a
             // Rust heap allocation in Miri; other typed slots span the slot.
             let size = mirch::physical_mem_mut().pending_heap_slot_size.take().unwrap_or(slot_size);
