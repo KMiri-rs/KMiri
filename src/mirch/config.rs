@@ -226,6 +226,15 @@ pub fn cpu_local_end_addr() -> usize {
     cpu_local_start_addr() + cpu_local_segment_size()
 }
 
+/// Linker-script symbols that KMiri provides itself, because KMiri lays out the
+/// sections they bound. `[layout]` entries in `kmiri.toml` take precedence.
+pub const BUILTIN_LAYOUT_SYMBOLS: [&str; 2] = ["__cpu_local_start", "__cpu_local_end"];
+
+/// Physical addresses of [`BUILTIN_LAYOUT_SYMBOLS`], in the same order.
+pub fn builtin_layout_symbol_paddrs() -> [usize; 2] {
+    [cpu_local_start_addr(), cpu_local_end_addr()]
+}
+
 // Kernel stack accessors
 /// Returns starting physical address of kernel stacks
 pub fn kernel_stack_start_addr() -> usize {

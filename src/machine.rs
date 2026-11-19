@@ -909,13 +909,27 @@ impl<'tcx> MiriMachine<'tcx> {
             string_cache: Default::default(),
             exported_symbols_cache: FxHashMap::default(),
             foreign_symbol_resolution_cache: RefCell::new(FxHashMap::default()),
-            foreign_symbol_addr_map: config.kmiri_toml.as_ref().map(|config|{
-                    config
-                        .layout_symbols()
-                        .map(|(name, addr)| (Symbol::intern(name), addr))
-                        .collect()
-                })
-                .unwrap_or_default(),
+            foreign_symbol_addr_map: {
+                let mut map: FxHashMap<Symbol, u64> = config
+                    .kmiri_toml
+                    .as_ref()
+                    .map(|config| {
+                        config
+                            .layout_symbols()
+                            .map(|(name, addr)| (Symbol::intern(name), addr))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                // KMiri places `.cpu_local` statics in its own CPU-local section
+                // (`alloc_addresses`), so it plays the linker for the section bounds too.
+                for (name, paddr) in
+                    mirch::BUILTIN_LAYOUT_SYMBOLS.into_iter().zip(mirch::builtin_layout_symbol_paddrs())
+                {
+                    map.entry(Symbol::intern(name))
+                        .or_insert(mirch::kernel_code_paddr_to_vaddr(paddr) as u64);
+                }
+                map
+            },
             kmiri_toml: config.kmiri_toml.as_ref().map(|val | Box::new( val.clone())),
             reachable_function_instances: Default::default(),
             backtrace_style: config.backtrace_style,
