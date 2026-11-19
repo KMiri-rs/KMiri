@@ -19,7 +19,7 @@ use crate::alloc_addresses::address_generator::align_addr;
 use crate::concurrency::VClock;
 use crate::diagnostics::SpanDedupDiagnostic;
 use crate::helpers::adjust_stack_addr;
-use crate::mirch::{CodeSection, PageState, kernel_code_paddr_to_vaddr};
+use crate::mirch::{CodeSection, PageState, TypedKind, kernel_code_paddr_to_vaddr};
 use crate::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -397,28 +397,53 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let page_index = paddr / mirch::page_size();
         let page_info = *mirch::physical_mem().page_states.get(page_index)?;
 
-        if let PageState::Typed { page_type: _, slot_size } = page_info {
+        if let PageState::Typed { page_type, slot_size } = page_info {
+            let (slot_start, slot_len, align) = if page_type == TypedKind::Slab {
+                // `Slab::new` lays the slots out from the start of the page
+                // with `step_by(slot_size)`. The slot size need not be a power
+                // of two or divide the page size, so find the slot from the
+                // page start and clip the last slot at the page end: the slab
+                // owns only its page. Slot starts are aligned to the largest
+                // power of two that divides the slot size.
+                let page_size = mirch::page_size();
+                let page_start = paddr - paddr % page_size;
+                let slot_start = page_start + (paddr - page_start) / slot_size * slot_size;
+                let slot_len = slot_size.min(page_start + page_size - slot_start);
+                (slot_start, slot_len, 1 << slot_size.trailing_zeros())
+            } else {
+                (paddr - paddr % slot_size, slot_size, slot_size)
+            };
             // The address may lie in a slot past the end of the live object
             // there, e.g. one past the end of a `Vec` buffer that is smaller
             // than its slot. Such an address is in no allocation (Miri does not
             // recognize an allocation at its end address either), so do not
             // create a second allocation at the slot start.
-            let slot_start = (paddr - paddr % slot_size) as u64;
             let occupied = self
                 .eval_context_ref()
                 .machine
                 .alloc_addresses
                 .borrow()
                 .int_to_ptr_map
-                .binary_search_by_key(&slot_start, |(addr, _)| *addr)
+                .binary_search_by_key(&(slot_start as u64), |(addr, _)| *addr)
                 .is_ok();
             if occupied {
                 return None;
             }
             // A heap object gets an allocation of exactly its own size, like a
             // Rust heap allocation in Miri; other typed slots span the slot.
-            let size = mirch::physical_mem_mut().pending_heap_slot_size.take().unwrap_or(slot_size);
-            return Some(self.kernel_allocation_at(paddr, size, slot_size));
+            if let Some(size) = mirch::physical_mem_mut().pending_heap_slot_size.take() {
+                return Some(self.kernel_allocation_at(slot_start, size, align));
+            }
+            let alloc_id = self.kernel_allocation_at(slot_start, slot_len, align);
+            if page_type == TypedKind::Slab {
+                // Without a pending heap object this is the allocator itself
+                // accessing a free slot through its address, e.g. the
+                // free-list link that `SlabSlotList::push` writes into the
+                // slot. The allocation stands for the free slot until
+                // `alloc_heap_slot` hands the slot out.
+                mirch::physical_mem_mut().free_slab_slots.insert(alloc_id);
+            }
+            return Some(alloc_id);
         }
 
         None
@@ -437,8 +462,9 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
 
         // Deallocate through the pointer the kernel passed to
         // `GlobalAlloc::dealloc`, as Miri's own `__rust_dealloc` shim does.
-        // The freelist link no longer lives in the slot (see
-        // `kern_miri_set_heap_slot_next`), so this pointer is still valid.
+        // The free-list link is written into the slot only after this, through
+        // the slot's address (see `SlabSlotList::push`), so this pointer is
+        // still valid.
         // Using the root tag instead would make the deallocation's write
         // access pop the item of the very `Box` being dropped, which is
         // weakly protected while it is passed by value (e.g. to `mem::drop`),
@@ -505,10 +531,25 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         interp_ok(true)
     }
 
-    fn alloc_heap_slot(&self, ptr: Pointer, size: usize) -> InterpResult<'tcx, ()> {
-        let this = self.eval_context_ref();
+    fn alloc_heap_slot(&mut self, ptr: Pointer, size: usize) -> InterpResult<'tcx, ()> {
+        let this = self.eval_context_mut();
         if this.alloc_large_heap_object(ptr.addr().bytes(), size)? {
             return interp_ok(());
+        }
+        // A free slot is covered by the allocation that stands for it (see
+        // `lazy_alloc_typed_slot_allocation`), e.g. because the free-list link
+        // was written into it. End that allocation: the object replaces it.
+        if let Some(free_id) = this.alloc_id_from_addr(ptr.addr().bytes(), 0) {
+            if mirch::physical_mem_mut().free_slab_slots.remove(&free_id) {
+                let info = this.get_alloc_info(free_id);
+                // `ptr` may still carry the provenance of the object that last
+                // lived in this slot, so free the slot through its address.
+                this.deallocate_ptr(
+                    Pointer::new(Some(Provenance::Wildcard), ptr.addr()),
+                    Some((info.size, info.align)),
+                    MemoryKind::Machine(MiriMemoryKind::Kernel),
+                )?;
+            }
         }
         // Look the slot up by address, so that a fresh allocation of `size`
         // bytes is created here even if `ptr` still carries the provenance of

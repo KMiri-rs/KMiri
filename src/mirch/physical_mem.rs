@@ -1,5 +1,5 @@
 use std::alloc::Layout;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rustc_abi::{Align, Size};
 use rustc_middle::ty::Mutability;
@@ -153,14 +153,23 @@ pub fn dealloc_pages<'tcx>(
         let page_idx = page_paddr / page_size();
         let page_info = physical_mem.page_states[page_idx];
 
-        if let PageState::Typed { page_type: _, slot_size } = page_info {
-            for index in 0..page_size() / slot_size {
+        if let PageState::Typed { page_type, slot_size } = page_info {
+            // A slab whose slot size does not divide the page size has a
+            // partial slot at the end of the page (see
+            // `lazy_alloc_typed_slot_allocation`).
+            let nr_slots = if page_type == TypedKind::Slab {
+                page_size().div_ceil(slot_size)
+            } else {
+                page_size() / slot_size
+            };
+            for index in 0..nr_slots {
                 let actual_paddr = page_paddr + index * slot_size;
                 let pos = global_state
                     .int_to_ptr_map
                     .binary_search_by_key(&(actual_paddr as u64), |(addr, _)| *addr);
                 if let Ok(pos) = pos {
                     let dead_id = global_state.int_to_ptr_map[pos].1;
+                    physical_mem.free_slab_slots.remove(&dead_id);
                     global_state.int_to_ptr_map.remove(pos);
                     global_state.exposed.remove(&dead_id);
                     global_state.base_paddr.remove(&dead_id);
@@ -402,7 +411,9 @@ pub struct PhysicalMemory {
     pub mem: *mut u8,
     pub page_states: Vec<PageState>,
     pub init_masks: BTreeMap<usize, Allocation<Provenance, (), MiriAllocBytes>>,
-    pub heap_slot_next: BTreeMap<usize, usize>,
+    /// Allocations that stand for free slab slots rather than for heap
+    /// objects; see `lazy_alloc_typed_slot_allocation`.
+    pub free_slab_slots: BTreeSet<AllocId>,
     /// Object size for the heap slot allocation being created by
     /// `kern_miri_alloc_heap_slot`.
     pub pending_heap_slot_size: Option<usize>,
@@ -415,7 +426,7 @@ impl PhysicalMemory {
             mem: std::ptr::null_mut(),
             page_states: Vec::new(),
             init_masks: BTreeMap::new(),
-            heap_slot_next: BTreeMap::new(),
+            free_slab_slots: BTreeSet::new(),
             pending_heap_slot_size: None,
             page_table: None,
         }
@@ -436,7 +447,7 @@ impl PhysicalMemory {
             mem,
             page_states,
             init_masks: BTreeMap::new(),
-            heap_slot_next: BTreeMap::new(),
+            free_slab_slots: BTreeSet::new(),
             pending_heap_slot_size: None,
             page_table: None,
         }

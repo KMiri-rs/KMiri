@@ -1072,22 +1072,6 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let size = this.read_target_usize(size)? as usize;
                 this.alloc_heap_slot(ptr, size)?;
             }
-            "kern_miri_set_heap_slot_next" => {
-                let [ptr, next] =
-                    this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
-                let ptr = this.read_pointer(ptr)?;
-                let next = this.read_target_usize(next)? as usize;
-                let addr = ptr.addr().bytes() as usize;
-                mirch::physical_mem_mut().heap_slot_next.insert(addr, next);
-            }
-            "kern_miri_get_heap_slot_next" => {
-                let [ptr] =
-                    this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
-                let ptr = this.read_pointer(ptr)?;
-                let addr = ptr.addr().bytes() as usize;
-                let next = mirch::physical_mem_mut().heap_slot_next.remove(&addr).unwrap();
-                this.write_scalar(Scalar::from_target_usize(next as u64, this), dest)?;
-            }
             "kern_miri_zero" => {
                 let [paddr, page_count] =
                     this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
@@ -1136,11 +1120,19 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let page_type = this.read_target_usize(page_type)? as usize;
                 let slot_size = this.read_target_usize(slot_size)? as usize;
                 let page_size = mirch::page_size();
-                assert_eq!(page_size % slot_size, 0);
+                let page_type = TypedKind::from_usize(page_type).unwrap();
+                // `Slab::<SLOT_SIZE>` accepts any slot size up to the page
+                // size; one that does not divide the page size leaves a partial
+                // slot at the page end (see `lazy_alloc_typed_slot_allocation`).
+                if page_type == TypedKind::Slab {
+                    assert!(0 < slot_size && slot_size <= page_size);
+                } else {
+                    assert_eq!(page_size % slot_size, 0);
+                }
                 for page_index in 0..count {
                     mirch::check_page_state(paddr + page_index * page_size, PageState::Untyped)?;
                 }
-                type_pages_at(paddr, count, slot_size, TypedKind::from_usize(page_type).unwrap())?;
+                type_pages_at(paddr, count, slot_size, page_type)?;
             }
             "kern_miri_get_root_page_table" => {
                 let root_paddr = mirch::physical_mem().page_table.as_ref().unwrap().root_paddr();
