@@ -45,8 +45,9 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use miri::{
-    BacktraceStyle, BorrowTrackerMethod, GenmcConfig, GenmcCtx, KMiriConfigToml, MiriConfig,
-    ProvenanceMode, TreeBorrowsParams, ValidationMode, entry_fn, run_genmc_mode,
+    BUILTIN_LAYOUT_SYMBOLS, BacktraceStyle, BorrowTrackerMethod, GenmcConfig, GenmcCtx,
+    KMiriConfigToml, MiriConfig, ProvenanceMode, TreeBorrowsParams, ValidationMode, entry_fn,
+    run_genmc_mode,
 };
 use rustc_codegen_ssa::traits::CodegenBackend;
 use rustc_data_structures::fx::FxHashSet;
@@ -186,6 +187,7 @@ fn report_unknown_local_foreign_symbol_uses(tcx: TyCtxt<'_>, kmiri_toml: Option<
     }
 
     let mut exported = collect_exported_symbol_names(tcx);
+    exported.extend(BUILTIN_LAYOUT_SYMBOLS.map(rustc_span::Symbol::intern));
     if let Some(config) = kmiri_toml {
         for (symbol, _addr) in config.layout_symbols() {
             exported.insert(rustc_span::Symbol::intern(symbol));

@@ -168,7 +168,7 @@ pub use crate::machine::{
     MiriMachine, MiriMemoryKind, PrimitiveLayouts, Provenance, ProvenanceExtra, RejectOpWith,
     ValidationMode,
 };
-pub use crate::mirch::{KMiriConfigToml, parse_json_file};
+pub use crate::mirch::{BUILTIN_LAYOUT_SYMBOLS, KMiriConfigToml, parse_json_file};
 pub use crate::operator::EvalContextExt as _;
 pub use crate::provenance_gc::{EvalContextExt as _, LiveAllocs, VisitProvenance, VisitWith};
 pub use crate::shims::EmulateItemResult;

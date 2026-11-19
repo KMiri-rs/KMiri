@@ -573,7 +573,9 @@ impl<'tcx> ThreadManager<'tcx> {
         ));
         let mut cpu_to_threads = [None; CPU_NUM];
         cpu_to_threads[0] = Some(ThreadId::MAIN_THREAD);
-        let cpu_local_base = [kernel_code_paddr_to_vaddr(mirch::cpu_local_start_addr()); CPU_NUM];
+        // The CPU-local base register holds its reset value 0 until the kernel's boot
+        // code sets it (`kern_miri_set_cpu_local_base`), as on hardware.
+        let cpu_local_base = [0; CPU_NUM];
         Self {
             active_thread: ThreadId::MAIN_THREAD,
             cpu_to_threads,
