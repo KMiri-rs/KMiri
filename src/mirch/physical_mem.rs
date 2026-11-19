@@ -73,17 +73,21 @@ pub fn create_allocation_at(
             params,
         );
 
-        let offset = paddr % page_size();
-        if offset + layout.size() <= page_size() {
-            let init_masks = &physical_mem().init_masks;
-            if let Some(mask_allocation) = init_masks.get(&(paddr - offset)) {
-                let init_copy = mask_allocation
-                    .init_mask()
-                    .prepare_copy((offset..offset + layout.size()).into());
-                allocation.init_mask_apply_copy(init_copy, (0..layout.size()).into(), 1);
+        // Take the initialization state from the per-page shadows. An
+        // allocation can span several pages (a large heap object), so walk
+        // it one page at a time.
+        let init_masks = &physical_mem().init_masks;
+        let mut done = 0;
+        while done < layout.size() {
+            let offset = (paddr + done) % page_size();
+            let chunk = (page_size() - offset).min(layout.size() - done);
+            if let Some(mask_allocation) = init_masks.get(&(paddr + done - offset)) {
+                let init_copy =
+                    mask_allocation.init_mask().prepare_copy((offset..offset + chunk).into());
+                allocation.init_mask_apply_copy(init_copy, (done..done + chunk).into(), 1);
             }
+            done += chunk;
         }
-        // FIXME: what should we do when the allocation needs crossing pages?
         allocation
     }
 }

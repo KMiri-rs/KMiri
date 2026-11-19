@@ -436,8 +436,63 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         interp_ok(())
     }
 
+    /// Creates the allocation for a heap object that the kernel placed
+    /// directly on frames from its frame allocator instead of in a slab slot.
+    ///
+    /// Such frames are untyped pages, so there is no slot to look up: the
+    /// object gets an allocation of exactly `size` bytes starting at its first
+    /// page. Returns `false` if `vaddr` is not on an untyped page.
+    fn alloc_large_heap_object(&self, vaddr: u64, size: usize) -> InterpResult<'tcx, bool> {
+        let this = self.eval_context_ref();
+        if !this.machine.is_page_table_enabled() {
+            return interp_ok(false);
+        }
+        let page_size = mirch::page_size();
+        let vaddr = vaddr as usize;
+        let paddr = mirch::page_walk_or(vaddr, || unreachable!())
+            .or_else(|| mirch::try_kernel_code_vaddr_to_paddr(vaddr))
+            .or_else(|| mirch::try_boot_pt_vaddr_to_paddr(vaddr));
+        let Some(paddr) = paddr else {
+            return interp_ok(false);
+        };
+        let is_untyped = |paddr: usize| {
+            mirch::physical_mem().page_states.get(paddr / page_size) == Some(&PageState::Untyped)
+        };
+        if !is_untyped(paddr) {
+            return interp_ok(false);
+        }
+
+        if paddr % page_size != 0 {
+            throw_unsup_format!(
+                "KMiri: large heap object at {vaddr:#x} does not start on a page boundary"
+            );
+        }
+        let end = paddr + size;
+        if let Some(bad) = (paddr..end).step_by(page_size).find(|page| !is_untyped(*page)) {
+            throw_unsup_format!(
+                "KMiri: {size}-byte large heap object at {vaddr:#x} covers the page at paddr {bad:#x}, which is not an allocated untyped page"
+            );
+        }
+        {
+            let global_state = this.machine.alloc_addresses.borrow();
+            let pos = global_state.int_to_ptr_map.partition_point(|(addr, _)| *addr < paddr as u64);
+            if let Some((live, _)) = global_state.int_to_ptr_map.get(pos) {
+                if *live < end as u64 {
+                    throw_unsup_format!(
+                        "KMiri: {size}-byte large heap object at {vaddr:#x} overlaps a live allocation at paddr {live:#x}"
+                    );
+                }
+            }
+        }
+        this.kernel_allocation_at(paddr, size, page_size);
+        interp_ok(true)
+    }
+
     fn alloc_heap_slot(&self, ptr: Pointer, size: usize) -> InterpResult<'tcx, ()> {
         let this = self.eval_context_ref();
+        if this.alloc_large_heap_object(ptr.addr().bytes(), size)? {
+            return interp_ok(());
+        }
         // Look the slot up by address, so that a fresh allocation of `size`
         // bytes is created here even if `ptr` still carries the provenance of
         // the object that previously lived in this slot.
