@@ -1022,6 +1022,9 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 };
                 let thread_id = *thread_id;
                 if link_name.as_str() == "miri_switch_to" {
+                    if let Some(data_race) = this.machine.data_race.as_vclocks_ref() {
+                        data_race.hand_over_cpu(&this.machine.threads, thread_id);
+                    }
                     this.machine.threads.switch_to(thread_id);
                 } else {
                     // An exiting kernel task must finish its entry and TLS destructors
@@ -1031,6 +1034,9 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     this.active_thread_mut().on_stack_empty = Some(Box::new(move |this| {
                         let result = on_stack_empty(this)?;
                         if result.is_ready() {
+                            if let Some(data_race) = this.machine.data_race.as_vclocks_ref() {
+                                data_race.hand_over_cpu(&this.machine.threads, thread_id);
+                            }
                             this.machine.threads.switch_to(thread_id);
                         }
                         interp_ok(result)

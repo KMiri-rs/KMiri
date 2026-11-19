@@ -1937,6 +1937,18 @@ impl GlobalState {
         clocks.clock.join(clock);
     }
 
+    /// KMiri: hands the CPU from the current thread to `next`, which is not
+    /// running. On hardware `next` continues on this CPU right after the
+    /// switch, so everything the current thread did before it happens before
+    /// everything `next` does afterwards. Joining the release clock into
+    /// `next` now is the same as acquiring it when `next` resumes, because
+    /// `next` takes no steps in between.
+    pub fn hand_over_cpu<'tcx>(&self, threads: &ThreadManager<'tcx>, next: ThreadId) {
+        let clock = self.release_clock(threads, |clock| clock.clone());
+        let (_, mut clocks) = self.thread_state_mut(next);
+        clocks.clock.join(&clock);
+    }
+
     /// Calls the given closure with the "release" clock of the current thread.
     /// Other threads can acquire this clock in the future to establish synchronization
     /// with this program point.
