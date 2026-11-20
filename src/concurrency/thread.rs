@@ -1068,7 +1068,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         // Kernel tasks return to their queued successor, or to the bootstrap
         // thread. That handoff waits for this entry and its destructors to end.
         // Ordinary std/pthread threads must still use their explicit join path.
-        if this.machine.thread_map.values().any(|&id| id == thread_id) {
+        if this.machine.kernel_threads.contains(&thread_id) {
             let next = this.machine.threads.next_thread[this.machine.threads.active_cpu]
                 .unwrap_or(ThreadId::MAIN_THREAD);
             let old = this.machine.threads.set_active_thread(next);

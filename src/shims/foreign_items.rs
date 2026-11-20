@@ -974,7 +974,9 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let cpu_id = this.read_target_usize(cpu_id)?;
                 let start_routine = this.read_pointer(func)?;
                 let func_arg = this.read_immediate(args)?;
-                let task = this.deref_pointer(task)?;
+                // The AP path does not yet record the thread id in the task context
+                // (OSTD keeps this call disabled; multi-CPU is not modelled).
+                let _task = this.deref_pointer(task)?;
                 let stack_end = this.read_target_usize(stack_end)?;
                 let stack_size = this.read_target_usize(stack_size)?;
                 let id = this.start_regular_thread(
@@ -989,14 +991,16 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     }),
                 )?;
                 this.set_ap_init_thread(cpu_id as usize, id);
-                this.machine.thread_map.try_insert(task.ptr().addr(), id).unwrap();
+                assert!(this.machine.kernel_threads.insert(id));
             }
             "miri_create_new_thread" => {
-                let [func, args, task, stack_end, stack_size] =
+                // Returns the new thread's id. OSTD stores it in the task's saved
+                // context, where native code keeps the registers to resume from,
+                // so the task can still be switched to after its `Task` value moves.
+                let [func, args, stack_end, stack_size] =
                     this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
                 let start_routine = this.read_pointer(func)?;
                 let func_arg = this.read_immediate(args)?;
-                let task = this.deref_pointer(task)?;
                 let stack_end = this.read_target_usize(stack_end)?;
                 let stack_size = this.read_target_usize(stack_size)?;
                 let id = this.start_regular_thread(
@@ -1010,17 +1014,24 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                         end: stack_end as usize,
                     }),
                 )?;
-                this.machine.thread_map.insert(task.ptr().addr(), id);
+                this.machine.kernel_threads.insert(id);
+                this.write_scalar(Scalar::from_target_usize(id.to_u32().into(), this), dest)?;
             }
             "miri_switch_to" | "miri_switch_to_after_return" => {
-                let [task] = this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
-                let task = this.deref_pointer(task)?;
-                let Some(thread_id) = this.machine.thread_map.get(&task.ptr().addr()) else {
+                // The argument is the thread id read from the next task's saved
+                // context. Natively, a context that does not hold a valid resume
+                // point crashes the CPU; here it stops the program.
+                let [thread] = this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let thread = this.read_target_usize(thread)?;
+                let thread_id = u32::try_from(thread).ok().map(ThreadId::new_unchecked);
+                let Some(thread_id) = thread_id.filter(|id| {
+                    this.machine.kernel_threads.contains(id)
+                        && !this.machine.threads.thread_ref(*id).is_terminated()
+                }) else {
                     throw_machine_stop!(TerminationInfo::Abort(
                         "the program aborted execution due to wrong switch".to_owned()
                     ))
                 };
-                let thread_id = *thread_id;
                 if link_name.as_str() == "miri_switch_to" {
                     if let Some(data_race) = this.machine.data_race.as_vclocks_ref() {
                         data_race.hand_over_cpu(&this.machine.threads, thread_id);

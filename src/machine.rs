@@ -593,7 +593,10 @@ pub struct MiriMachine<'tcx> {
     pub(crate) blocking_io: BlockingIoManager,
 
     /// Task pointer to `ThreadId` mapping.
-    pub(crate) thread_map: FxHashMap<Size, ThreadId>,
+    /// Threads that run kernel tasks (created by `miri_create_new_thread` or
+    /// `kern_miri_init_ap`). A task finds its thread through the id stored in
+    /// its saved context, not through this set.
+    pub(crate) kernel_threads: FxHashSet<ThreadId>,
 
     /// Stores which thread is eligible to run on which CPUs.
     /// This has no effect at all, it is just tracked to produce the correct result
@@ -1006,7 +1009,7 @@ impl<'tcx> MiriMachine<'tcx> {
             float_rounding_error: config.float_rounding_error,
             short_fd_operations: config.short_fd_operations,
             cpu_local_alloc_set: RefCell::new(FxHashSet::default()),
-            thread_map: FxHashMap::default(),
+            kernel_threads: FxHashSet::default(),
             pt_checker: None,
             record: Vec::new(),
             debugger: None,
