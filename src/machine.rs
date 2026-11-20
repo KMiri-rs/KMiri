@@ -1977,7 +1977,11 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
         }
 
         if machine.is_page_table_enabled() {
-            let paddr = machine.alloc_addresses.borrow().get_base_addr(alloc_id) as usize;
+            // A page-table page is one allocation (see `typed_object_span`), so
+            // the written entry is at the base plus the offset of the write. A
+            // write that spans several entries records the first one.
+            let paddr = machine.alloc_addresses.borrow().get_base_addr(alloc_id) as usize
+                + range.start.bytes() as usize;
             if let PageState::Typed { page_type, slot_size: _ } =
                 mirch::physical_mem().page_states[paddr / mirch::page_size()]
             {
