@@ -31,6 +31,27 @@ else \
 fi
 endef
 
+# `vmspace-activate-irq` needs injected timer interrupts, so it and its control
+# run with that test's own kmiri.toml.
+VMSPACE_IRQ_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/vmspace-activate-irq/kmiri.toml -Zmiri-permissive-provenance"
+
+define RUN_VMSPACE_ACTIVATE_IRQ_TEST
+log=$$(mktemp); \
+if (cd $(PROJ)/tests/vmspace-activate-irq && $(VMSPACE_IRQ_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
+	cat "$$log"; rm -f "$$log"; echo "vmspace-activate-irq unexpectedly completed without aborting"; exit 1; \
+fi; \
+cat "$$log"; \
+if awk '/Undefined Behavior: / && (/has been freed/ || /strongly protected/) { found = 1 } END { exit !found }' "$$log" && grep -F "ostd::mm::VmSpace::activate" "$$log" >/dev/null; then \
+	echo "Observed expected Undefined Behavior in VmSpace::activate."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "vmspace-activate-irq failed without the expected Undefined Behavior in VmSpace::activate"; exit 1; \
+fi
+endef
+
+define RUN_VMSPACE_ACTIVATE_IRQ_CONTROL_TEST
+cd $(PROJ)/tests/vmspace-activate-irq-control && $(VMSPACE_IRQ_ENV_VARS) cargo osdk miri test
+endef
+
 DEBUG := --debug
 
 .PHONY: install
@@ -54,6 +75,14 @@ else ifeq ($(ASTERINAS_TEST),irq-rcu-uaf)
 asterinas: install install-osdk
 	$(RUN_IRQ_RCU_UAF_TEST)
 
+else ifeq ($(ASTERINAS_TEST),vmspace-activate-irq)
+asterinas: install install-osdk
+	$(RUN_VMSPACE_ACTIVATE_IRQ_TEST)
+
+else ifeq ($(ASTERINAS_TEST),vmspace-activate-irq-control)
+asterinas: install install-osdk
+	$(RUN_VMSPACE_ACTIVATE_IRQ_CONTROL_TEST)
+
 else
 asterinas: install install-osdk
 	echo $(ASTERINAS_TEST)
@@ -64,7 +93,8 @@ endif
 ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    task-switch-back task-exit-last task-exit-with-runnable \
                    irq-simulation irq-trap-path irq-deadlock irq-rcu-uaf \
-                   irq-rcu-uaf-lifo heap-box-drop
+                   irq-rcu-uaf-lifo heap-box-drop \
+                   vmspace-activate-irq vmspace-activate-irq-control
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -74,6 +104,10 @@ asterinas-test-all: install install-osdk
 			$(RUN_IRQ_DEADLOCK_TEST); \
 		elif [ "$${test}" = irq-rcu-uaf ]; then \
 			$(RUN_IRQ_RCU_UAF_TEST); \
+		elif [ "$${test}" = vmspace-activate-irq ]; then \
+			$(RUN_VMSPACE_ACTIVATE_IRQ_TEST); \
+		elif [ "$${test}" = vmspace-activate-irq-control ]; then \
+			($(RUN_VMSPACE_ACTIVATE_IRQ_CONTROL_TEST)); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
