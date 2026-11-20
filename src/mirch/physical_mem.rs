@@ -139,6 +139,38 @@ pub fn free_kernel_allocations(ecx: &mut MiriInterpCx<'_>, v_kernel_mem: Vec<Ker
     }
 }
 
+/// Returns `(start, len, align)` of the typed object that contains `paddr`, on a
+/// page typed as `page_type` with `slot_size`. A typed object is backed by one
+/// Miri allocation (created lazily by `lazy_alloc_typed_slot_allocation`).
+///
+/// - `Slab`: the page holds independent slots laid out from the page start with
+///   `step_by(slot_size)`. The slot size need not be a power of two or divide
+///   the page size, so the last slot is clipped at the page end: the slab owns
+///   only its page. Slot starts are aligned to the largest power of two that
+///   divides the slot size.
+/// - `PageTable`: the whole page is one object, an array of page-table entries
+///   of `slot_size` bytes each. Code indexes entries with pointer arithmetic
+///   from the page start (`(page as *mut Entry).add(i)`), which is in bounds
+///   only if the object spans the page.
+/// - Other kinds: one object per `slot_size` bytes.
+pub fn typed_object_span(
+    paddr: usize,
+    page_type: TypedKind,
+    slot_size: usize,
+) -> (usize, usize, usize) {
+    let page_size = page_size();
+    let page_start = paddr - paddr % page_size;
+    match page_type {
+        TypedKind::Slab => {
+            let slot_start = page_start + (paddr - page_start) / slot_size * slot_size;
+            let slot_len = slot_size.min(page_start + page_size - slot_start);
+            (slot_start, slot_len, 1 << slot_size.trailing_zeros())
+        }
+        TypedKind::PageTable => (page_start, page_size, page_size),
+        _ => (paddr - paddr % slot_size, slot_size, slot_size),
+    }
+}
+
 /// Frees `count` pages at `paddr` in the simulated physical memory.
 pub fn dealloc_pages<'tcx>(
     this: &mut MiriInterpCx<'tcx>,
@@ -154,19 +186,17 @@ pub fn dealloc_pages<'tcx>(
         let page_info = physical_mem.page_states[page_idx];
 
         if let PageState::Typed { page_type, slot_size } = page_info {
-            // A slab whose slot size does not divide the page size has a
-            // partial slot at the end of the page (see
-            // `lazy_alloc_typed_slot_allocation`).
-            let nr_slots = if page_type == TypedKind::Slab {
-                page_size().div_ceil(slot_size)
-            } else {
-                page_size() / slot_size
-            };
-            for index in 0..nr_slots {
-                let actual_paddr = page_paddr + index * slot_size;
+            // Free the allocation of every typed object on the page (see
+            // `typed_object_span`).
+            let mut actual_paddr = page_paddr;
+            while actual_paddr < page_paddr + page_size() {
+                let (object_start, object_len, _) =
+                    typed_object_span(actual_paddr, page_type, slot_size);
+                debug_assert_eq!(object_start, actual_paddr);
+                actual_paddr += object_len;
                 let pos = global_state
                     .int_to_ptr_map
-                    .binary_search_by_key(&(actual_paddr as u64), |(addr, _)| *addr);
+                    .binary_search_by_key(&(object_start as u64), |(addr, _)| *addr);
                 if let Ok(pos) = pos {
                     let dead_id = global_state.int_to_ptr_map[pos].1;
                     physical_mem.free_slab_slots.remove(&dead_id);

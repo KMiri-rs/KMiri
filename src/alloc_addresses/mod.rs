@@ -398,21 +398,8 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let page_info = *mirch::physical_mem().page_states.get(page_index)?;
 
         if let PageState::Typed { page_type, slot_size } = page_info {
-            let (slot_start, slot_len, align) = if page_type == TypedKind::Slab {
-                // `Slab::new` lays the slots out from the start of the page
-                // with `step_by(slot_size)`. The slot size need not be a power
-                // of two or divide the page size, so find the slot from the
-                // page start and clip the last slot at the page end: the slab
-                // owns only its page. Slot starts are aligned to the largest
-                // power of two that divides the slot size.
-                let page_size = mirch::page_size();
-                let page_start = paddr - paddr % page_size;
-                let slot_start = page_start + (paddr - page_start) / slot_size * slot_size;
-                let slot_len = slot_size.min(page_start + page_size - slot_start);
-                (slot_start, slot_len, 1 << slot_size.trailing_zeros())
-            } else {
-                (paddr - paddr % slot_size, slot_size, slot_size)
-            };
+            let (slot_start, slot_len, align) =
+                mirch::typed_object_span(paddr, page_type, slot_size);
             // The address may lie in a slot past the end of the live object
             // there, e.g. one past the end of a `Vec` buffer that is smaller
             // than its slot. Such an address is in no allocation (Miri does not
