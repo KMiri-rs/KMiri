@@ -204,40 +204,6 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         }
 
         let blocks_executed = this.machine.basic_block_count - basic_blocks_before;
-        if blocks_executed != 0 {
-            let budget = this.machine.irq_config.handler_budget_basic_blocks();
-            let watchdog = this.machine.irq_cpus[cpu].active.as_mut().and_then(|active| {
-                active.blocks += blocks_executed;
-                (active.blocks > budget).then_some((
-                    active.event_id,
-                    active.stack_depth,
-                    active.blocks,
-                ))
-            });
-            if let Some((event_id, interrupted_depth, blocks)) = watchdog {
-                let stack = this.active_thread_stack();
-                let handler_stack = stack[interrupted_depth..]
-                    .iter()
-                    .rev()
-                    .take(8)
-                    .map(|frame| kmiri_helper::instance_name(this.tcx.tcx, frame.instance()))
-                    .collect::<Vec<_>>();
-                let interrupted_stack = stack[..interrupted_depth]
-                    .iter()
-                    .rev()
-                    .take(8)
-                    .map(|frame| kmiri_helper::instance_name(this.tcx.tcx, frame.instance()))
-                    .collect::<Vec<_>>();
-                let thread = this.machine.threads.active_thread();
-                let pending = this.machine.irq_cpus[cpu].pending.len();
-                let irq_enabled = this.machine.irq_cpus[cpu].enabled;
-                let global_block_count = this.machine.basic_block_count;
-                throw_machine_stop!(TerminationInfo::Abort(format!(
-                    "IRQ watchdog: possible self-deadlock; event={event_id} cpu={cpu} thread={thread:?} global_block_count={global_block_count} handler_blocks={blocks} budget={budget} pending={pending} IF={irq_enabled} handler_stack={handler_stack:?} interrupted_stack={interrupted_stack:?}"
-                )));
-            }
-        }
-
         let current_stack_depth = this.active_thread_stack().len();
         if let Some((event_id, vector, source, was_enabled)) =
             this.machine.finish_irq_if_returned(cpu, current_stack_depth)
@@ -276,7 +242,6 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 source,
                 stack_depth: interrupted_depth,
                 was_enabled: true,
-                blocks: 0,
             });
             this.machine.irq_cpus[cpu].enabled = false;
             if this.machine.irq_config.trace() {
