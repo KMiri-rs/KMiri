@@ -512,7 +512,6 @@ pub(crate) struct ActiveIrq {
     pub(crate) source: IrqSource,
     pub(crate) stack_depth: usize,
     pub(crate) was_enabled: bool,
-    pub(crate) blocks: u64,
 }
 
 pub(crate) struct CpuIrqState {

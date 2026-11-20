@@ -5,19 +5,6 @@ MIRI_SYSROOT_REBUILT := /root/.cache/miri
 ASTERINAS_TOML := $(PROJ)/tests/asterinas.toml
 ASTERINAS_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(ASTERINAS_TOML) -Zmiri-permissive-provenance"
 
-define RUN_IRQ_DEADLOCK_TEST
-log=$$(mktemp); \
-if (cd $(PROJ)/tests/irq-deadlock && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
-	cat "$$log"; rm -f "$$log"; echo "irq-deadlock unexpectedly completed without aborting"; exit 1; \
-fi; \
-cat "$$log"; \
-if grep -F "IRQ watchdog: possible self-deadlock" "$$log" >/dev/null; then \
-	echo "Observed expected IRQ watchdog deadlock diagnostic."; rm -f "$$log"; \
-else \
-	rm -f "$$log"; echo "irq-deadlock failed without the expected watchdog diagnostic"; exit 1; \
-fi
-endef
-
 define RUN_IRQ_RCU_UAF_TEST
 log=$$(mktemp); \
 if (cd $(PROJ)/tests/irq-rcu-uaf && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
@@ -67,11 +54,7 @@ install-osdk:
 
 .PHONY: asterinas
 ASTERINAS_TEST := init
-ifeq ($(ASTERINAS_TEST),irq-deadlock)
-asterinas: install install-osdk
-	$(RUN_IRQ_DEADLOCK_TEST)
-
-else ifeq ($(ASTERINAS_TEST),irq-rcu-uaf)
+ifeq ($(ASTERINAS_TEST),irq-rcu-uaf)
 asterinas: install install-osdk
 	$(RUN_IRQ_RCU_UAF_TEST)
 
@@ -92,7 +75,7 @@ endif
 
 ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    task-switch-back task-exit-last task-exit-with-runnable \
-                   irq-simulation irq-trap-path irq-deadlock irq-rcu-uaf \
+                   irq-simulation irq-trap-path irq-rcu-uaf \
                    irq-rcu-uaf-lifo heap-box-drop \
                    vmspace-activate-irq vmspace-activate-irq-control
 .PHONY: asterinas-test-all
@@ -100,9 +83,7 @@ asterinas-test-all: install install-osdk
 	set -eu; \
 	for test in $(ASTERINAS_TESTS); do \
 		echo "Running test: $${test}"; \
-		if [ "$${test}" = irq-deadlock ]; then \
-			$(RUN_IRQ_DEADLOCK_TEST); \
-		elif [ "$${test}" = irq-rcu-uaf ]; then \
+		if [ "$${test}" = irq-rcu-uaf ]; then \
 			$(RUN_IRQ_RCU_UAF_TEST); \
 		elif [ "$${test}" = vmspace-activate-irq ]; then \
 			$(RUN_VMSPACE_ACTIVATE_IRQ_TEST); \

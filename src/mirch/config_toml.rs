@@ -47,7 +47,6 @@ pub struct IrqConfigToml {
     inject_at_basic_blocks: Vec<u64>,
     random_injection_rate: f64,
     random_seed: u64,
-    handler_budget_basic_blocks: u64,
     trace: bool,
 }
 
@@ -59,7 +58,6 @@ impl Default for IrqConfigToml {
             inject_at_basic_blocks: Vec::new(),
             random_injection_rate: 0.0,
             random_seed: 0,
-            handler_budget_basic_blocks: 10_000,
             trace: false,
         }
     }
@@ -86,10 +84,6 @@ impl IrqConfigToml {
         self.random_seed
     }
 
-    pub fn handler_budget_basic_blocks(&self) -> u64 {
-        self.handler_budget_basic_blocks
-    }
-
     pub fn trace(&self) -> bool {
         self.trace
     }
@@ -105,12 +99,6 @@ impl KMiriConfigToml {
         if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
             return Err(format!(
                 "invalid `[irq].random_injection_rate` in `{}`: expected a value in 0.0..=1.0",
-                path.display()
-            ));
-        }
-        if config.irq.enabled && config.irq.handler_budget_basic_blocks == 0 {
-            return Err(format!(
-                "invalid `[irq].handler_budget_basic_blocks` in `{}`: expected a non-zero value when IRQ simulation is enabled",
                 path.display()
             ));
         }
@@ -195,7 +183,6 @@ _eappmem = 0x80400000
 fn irq_defaults_and_values() {
     let config: KMiriConfigToml = basic_toml::from_str("total_mem_size = 0x8000000\n").unwrap();
     assert!(!config.irq().enabled());
-    assert_eq!(config.irq().handler_budget_basic_blocks(), 10_000);
 
     let config: KMiriConfigToml = basic_toml::from_str(
         r#"
@@ -207,7 +194,6 @@ tick_interval_basic_blocks = 8
 inject_at_basic_blocks = [12, 20]
 random_injection_rate = 0.25
 random_seed = 7
-handler_budget_basic_blocks = 64
 trace = true
 "#,
     )
@@ -217,6 +203,5 @@ trace = true
     assert_eq!(config.irq().inject_at_basic_blocks(), [12, 20]);
     assert_eq!(config.irq().random_injection_rate(), 0.25);
     assert_eq!(config.irq().random_seed(), 7);
-    assert_eq!(config.irq().handler_budget_basic_blocks(), 64);
     assert!(config.irq().trace());
 }
