@@ -1046,12 +1046,15 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
 }
 
 fn expose_tag<'tcx>(paddr: usize, alloc_id: AllocId, ecx: &InterpCx<'tcx, MiriMachine<'tcx>>) {
+    let Some(borrow_tracker) = ecx.machine.borrow_tracker.as_ref() else {
+        // Without a borrow tracker (`-Zmiri-disable-stacked-borrows`) there is no
+        // tag to expose; marking the allocation exposed is all int2ptr needs.
+        ecx.machine.alloc_addresses.borrow_mut().exposed.insert(alloc_id);
+        return;
+    };
     // Re-expose the root tag so wildcard/raw-pointer accesses can find a
     // writable provenance after the typed-slot allocation is created.
-    let root_tag = {
-        let mut borrow_tracker = ecx.machine.borrow_tracker.as_ref().unwrap().borrow_mut();
-        borrow_tracker.root_ptr_tag(alloc_id, &ecx.machine)
-    };
+    let root_tag = borrow_tracker.borrow_mut().root_ptr_tag(alloc_id, &ecx.machine);
     ecx.machine.alloc_addresses.borrow_mut().exposed.insert(alloc_id);
     ecx.expose_tag(alloc_id, root_tag).discard_err().unwrap_or_else(|| {
         panic!("paddr={paddr:#x} ({alloc_id:?}) with {root_tag:?} has been exposed")
