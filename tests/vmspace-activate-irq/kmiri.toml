@@ -9,5 +9,4 @@ tick_interval_basic_blocks = 0
 inject_at_basic_blocks = []
 random_injection_rate = 0.0002
 random_seed = 1
-handler_budget_basic_blocks = 10000
 trace = false
