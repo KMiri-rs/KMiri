@@ -16,7 +16,7 @@ pub use self::address_generator::AddressGenerator;
 use self::reuse_pool::ReusePool;
 use crate::alloc::MiriAllocParams;
 use crate::alloc_addresses::address_generator::align_addr;
-use crate::concurrency::VClock;
+use crate::concurrency::{AllocDataRaceHandler, GlobalDataRaceHandler, VClock, data_race};
 use crate::diagnostics::SpanDedupDiagnostic;
 use crate::helpers::adjust_stack_addr;
 use crate::mirch::{CodeSection, PageState, TypedKind, kernel_code_paddr_to_vaddr};
@@ -34,6 +34,21 @@ pub enum ProvenanceMode {
 }
 
 pub type GlobalState = RefCell<GlobalStateInner>;
+
+/// A copy of the CPU-local section that the program made at physical address `base`.
+/// Each `.cpu_local` variable has its own allocation in the copy, at the variable's
+/// offset in the section.
+#[derive(Debug)]
+pub struct CpuLocalCopy {
+    base: usize,
+    /// The variables that had been used when the copy was made. Their copies were
+    /// made then, with their values at that time.
+    copied: FxHashSet<AllocId>,
+    /// When the copy was made. A variable that had not been used by then still held
+    /// its initial value; its copy is created when it is first accessed, holding that
+    /// value, as if written at this point.
+    made_at: Option<data_race::MadeAt>,
+}
 
 #[derive(Debug)]
 pub struct GlobalStateInner {
@@ -398,6 +413,10 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let page_info = *mirch::physical_mem().page_states.get(page_index)?;
 
         if let PageState::Typed { page_type, slot_size } = page_info {
+            if page_type == TypedKind::CpuLocalCopy {
+                // Only `cpu_local_copy_at` creates allocations in a copy of the section.
+                return None;
+            }
             let (slot_start, slot_len, align) =
                 mirch::typed_object_span(paddr, page_type, slot_size);
             // The address may lie in a slot past the end of the live object
@@ -560,16 +579,29 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     /// Construct a new alloc when a fresh paddr is accessed the first time.
     fn kernel_allocation_at(&self, paddr: usize, size: usize, align: usize) -> AllocId {
         let ecx = self.eval_context_ref();
-        let alloc_id = ecx.tcx.reserve_alloc_id();
         let actual_paddr = paddr - paddr % align;
+        let allocation = mirch::create_allocation_at(
+            actual_paddr,
+            Layout::from_size_align(size, align).unwrap(),
+            ecx.machine.get_default_alloc_params(),
+        );
+        self.insert_kernel_allocation(paddr, actual_paddr, allocation, None)
+    }
+
+    /// Adds `allocation`, which lies at `actual_paddr`, as a kernel allocation. With
+    /// `made_at`, it stands for memory written at that point rather than now.
+    fn insert_kernel_allocation(
+        &self,
+        paddr: usize,
+        actual_paddr: usize,
+        allocation: Allocation<Provenance, (), MiriAllocBytes>,
+        made_at: Option<data_race::MadeAt>,
+    ) -> AllocId {
+        let ecx = self.eval_context_ref();
+        let alloc_id = ecx.tcx.reserve_alloc_id();
         let kind = rustc_const_eval::interpret::MemoryKind::Machine(MiriMemoryKind::Kernel);
         let allocation = {
-            let allocation = mirch::create_allocation_at(
-                actual_paddr,
-                Layout::from_size_align(size, align).unwrap(),
-                ecx.machine.get_default_alloc_params(),
-            );
-            let extra = MiriMachine::init_allocation(
+            let mut extra = MiriMachine::init_allocation(
                 ecx,
                 alloc_id,
                 kind,
@@ -577,6 +609,11 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 allocation.align,
             )
             .unwrap();
+            if let (Some(made_at), AllocDataRaceHandler::Vclocks(clocks, _)) =
+                (made_at, &mut extra.data_race)
+            {
+                *clocks = data_race::AllocState::new_allocation_made_at(allocation.size(), made_at);
+            }
             allocation.with_extra(extra)
         };
         ecx.memory.alloc_map().insert(alloc_id, (kind, allocation));
@@ -587,6 +624,167 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
 
         expose_tag(paddr, alloc_id, ecx);
         alloc_id
+    }
+
+    /// The physical address that the kernel's virtual address `vaddr` maps to.
+    fn kernel_vaddr_to_paddr(&self, vaddr: u64) -> Option<u64> {
+        let this = self.eval_context_ref();
+        if this.machine.is_page_table_enabled() {
+            let vaddr = vaddr as usize;
+            let paddr_fallback = || {
+                mirch::try_kernel_code_vaddr_to_paddr(vaddr)
+                    .or_else(|| mirch::try_boot_pt_vaddr_to_paddr(vaddr))
+            };
+            // An address that neither the page table nor the two linear mappings cover
+            // belongs to no allocation, e.g. a CPU-local variable addressed through a
+            // base register that is still 0 (Asterinas #1069). Report it as dangling.
+            Some(mirch::page_walk_or(vaddr, || unreachable!()).or_else(paddr_fallback)? as u64)
+        } else {
+            let vaddr_usize = vaddr as usize;
+            let paddr = mirch::try_kernel_code_vaddr_to_paddr(vaddr_usize)
+                .or_else(|| mirch::try_boot_pt_vaddr_to_paddr(vaddr_usize))
+                .unwrap_or(vaddr_usize) as u64;
+            log!("vaddr -> paddr (no-pt) = {vaddr:#x} -> {paddr:#x}");
+            Some(paddr)
+        }
+    }
+
+    /// If `paddr` lies in a copy of the CPU-local section, returns `Some` with the copy of
+    /// the variable that covers it, creating that copy on first access, or `Some(None)` if
+    /// no variable covers it. Returns `None` if `paddr` is in no copy of the section.
+    fn cpu_local_copy_at(&self, paddr: usize) -> Option<Option<AllocId>> {
+        let this = self.eval_context_ref();
+        let section_start = mirch::cpu_local_start_addr();
+        let section_len = mirch::cpu_local_segment_size();
+        let (base, made_at) = {
+            let copies = this.machine.cpu_local_copies.borrow();
+            let copy = copies.iter().find(|c| (c.base..c.base + section_len).contains(&paddr))?;
+            (copy.base, copy.made_at)
+        };
+        let in_section = section_start + (paddr - base);
+        // The variable at the same offset in the section.
+        let (var_paddr, var_id) = {
+            let global_state = this.machine.alloc_addresses.borrow();
+            let map = &global_state.int_to_ptr_map;
+            let pos = map.partition_point(|&(addr, _)| addr <= in_section as u64);
+            if pos == 0 {
+                return Some(None);
+            }
+            map[pos - 1]
+        };
+        if !this.machine.cpu_local_alloc_set.borrow().contains(&var_id) {
+            return Some(None);
+        }
+        let size = this.get_alloc_info(var_id).size;
+        if in_section as u64 - var_paddr >= size.bytes() {
+            return Some(None);
+        }
+        let copy_paddr = base + (var_paddr as usize - section_start);
+        {
+            // A variable copied with the section has its copy already; so does one that
+            // was accessed in this copy before. `paddr` is then outside it.
+            let copies = this.machine.cpu_local_copies.borrow();
+            let copy = copies.iter().find(|c| c.base == base).unwrap();
+            let global_state = this.machine.alloc_addresses.borrow();
+            if copy.copied.contains(&var_id)
+                || global_state
+                    .int_to_ptr_map
+                    .binary_search_by_key(&(copy_paddr as u64), |(addr, _)| *addr)
+                    .is_ok()
+            {
+                return Some(None);
+            }
+        }
+        // The variable was not used before the section was copied, so the copy holds its
+        // initial value.
+        let GlobalAlloc::Static(def_id) = this.tcx.global_alloc(var_id) else {
+            return Some(None);
+        };
+        let initial = this.tcx.eval_static_initializer(def_id).expect("static has a value");
+        let initial = initial
+            .inner()
+            .adjust_from_tcx(
+                &this.tcx,
+                |bytes, align| this.get_global_alloc_bytes(var_id, bytes, align),
+                |ptr| this.global_root_pointer(ptr),
+            )
+            .discard_err()?;
+        let mut allocation = crate::machine::place_allocation_at(this, copy_paddr, &initial);
+        allocation.mutability = rustc_ast::Mutability::Mut;
+        let alloc_id = self.insert_kernel_allocation(copy_paddr, copy_paddr, allocation, made_at);
+        log!("[cpu_local_copy_at] copy of {var_id:?} at {copy_paddr:#x}: {alloc_id:?}");
+        Some(Some(alloc_id))
+    }
+
+    /// Copies the CPU-local section to the virtual address `dst`, as `memcpy` would, but
+    /// with one allocation per variable, so that each copy keeps its provenance, borrow
+    /// state, and race detection. Variables that were used before the copy are copied now;
+    /// the others are copied, with their initial value, on first access to the copy.
+    fn copy_cpu_local_section(&mut self, dst: usize) -> InterpResult<'tcx> {
+        let this = self.eval_context_mut();
+        let page_size = mirch::page_size();
+        let section_start = mirch::cpu_local_start_addr();
+        let pages = mirch::cpu_local_segment_size().div_ceil(page_size);
+        let Some(dst_paddr) = this.kernel_vaddr_to_paddr(dst as u64) else {
+            throw_ub_format!("copying the CPU-local section to unmapped address {dst:#x}");
+        };
+        let dst_paddr = dst_paddr as usize;
+        // On hardware every variable keeps its alignment in a copy at a page-aligned
+        // address. KMiri places each copy at the variable's offset, so it needs that too.
+        if !dst.is_multiple_of(page_size)
+            || !dst_paddr.abs_diff(section_start).is_multiple_of(page_size)
+        {
+            throw_unsup_format!(
+                "KMiri only supports copies of the CPU-local section at a page boundary"
+            );
+        }
+        for i in 0..pages {
+            let page = this.kernel_vaddr_to_paddr((dst + i * page_size) as u64);
+            if page != Some((dst_paddr + i * page_size) as u64) {
+                throw_unsup_format!(
+                    "KMiri only supports copies of the CPU-local section to contiguous physical memory"
+                );
+            }
+            mirch::check_page_state(dst_paddr + i * page_size, PageState::Untyped)?;
+        }
+        mirch::type_pages_at(dst_paddr, pages, page_size, TypedKind::CpuLocalCopy)?;
+
+        let made_at = match &this.machine.data_race {
+            GlobalDataRaceHandler::Vclocks(data_race) =>
+                Some(data_race.active_thread_now(&this.machine.threads)),
+            _ => None,
+        };
+        let mut used: Vec<AllocId> =
+            this.machine.cpu_local_alloc_set.borrow().iter().copied().collect();
+        used.sort();
+        let mut copied = FxHashSet::default();
+        for var_id in used {
+            let info = this.get_alloc_info(var_id);
+            if info.size.bytes() == 0 {
+                continue;
+            }
+            let var_vaddr = this.addr_from_alloc_id(var_id, Some(MiriMemoryKind::Global.into()))?;
+            let var_paddr = this.machine.alloc_addresses.borrow().get_base_addr(var_id) as usize;
+            let offset = var_paddr - section_start;
+            this.kernel_allocation_at(
+                dst_paddr + offset,
+                info.size.bytes_usize(),
+                info.align.bytes_usize(),
+            );
+            this.mem_copy(
+                interpret::Pointer::new(Some(Provenance::Wildcard), Size::from_bytes(var_vaddr)),
+                interpret::Pointer::new(Some(Provenance::Wildcard), Size::from_bytes(dst + offset)),
+                info.size,
+                /*nonoverlapping*/ true,
+            )?;
+            copied.insert(var_id);
+        }
+        this.machine.cpu_local_copies.borrow_mut().push(CpuLocalCopy {
+            base: dst_paddr,
+            copied,
+            made_at,
+        });
+        interp_ok(())
     }
 
     // Returns the `AllocId` that corresponds to the specified addr,
@@ -601,31 +799,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
 
         // unwrap_or(false) when asterinas migrates to toml config.
         let page_table_enabled = this.machine.is_page_table_enabled();
-        let paddr = if page_table_enabled {
-            let vaddr = vaddr as usize;
-            let boot_pt = false;
-            let paddr_fallback = || {
-                // log!("[alloc_id_from_addr - page_walk_or] vaddr={vaddr:#x}");
-                mirch::try_kernel_code_vaddr_to_paddr(vaddr)
-                    .or_else(|| mirch::try_boot_pt_vaddr_to_paddr(vaddr))
-            };
-            // An address that neither the page table nor the two linear mappings cover
-            // belongs to no allocation, e.g. a CPU-local variable addressed through a
-            // base register that is still 0 (Asterinas #1069). Report it as dangling.
-            let paddr = mirch::page_walk_or(vaddr, || unreachable!()).or_else(paddr_fallback)?
-                as u64;
-            if boot_pt {
-                log!("[alloc_id_from_addr] boot_pt paddr={paddr:#x} size={size}");
-            }
-            paddr
-        } else {
-            let vaddr_usize = vaddr as usize;
-            let paddr = mirch::try_kernel_code_vaddr_to_paddr(vaddr_usize)
-                .or_else(|| mirch::try_boot_pt_vaddr_to_paddr(vaddr_usize))
-                .unwrap_or(vaddr_usize) as u64;
-            log!("vaddr -> paddr (no-pt) = {vaddr:#x} -> {paddr:#x}");
-            paddr
-        };
+        let paddr = this.kernel_vaddr_to_paddr(vaddr)?;
 
         // We always search the allocation to the right of this address. So if the size is strictly
         // negative, we have to search for `addr-1` instead.
@@ -642,7 +816,10 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     "[alloc_id_from_addr - lazy_alloc_typed_slot_allocation] no alloc_id pos=Err(0) paddr={paddr:#x}"
                 );
                 drop(global_state);
-                self.lazy_alloc_typed_slot_allocation(paddr)
+                match self.cpu_local_copy_at(paddr) {
+                    Some(copy) => copy,
+                    None => self.lazy_alloc_typed_slot_allocation(paddr),
+                }
             }
             Err(pos) => {
                 // This is the largest of the addresses smaller than `int`,
@@ -661,7 +838,9 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     // FIXME: explain the kmiri logic in this branch
                     let paddr = paddr as usize;
                     drop(global_state);
-                    if page_table_enabled {
+                    if let Some(copy) = self.cpu_local_copy_at(paddr) {
+                        copy
+                    } else if page_table_enabled {
                         self.lazy_alloc_typed_slot_allocation(paddr)
                     } else {
                         let kalloc =

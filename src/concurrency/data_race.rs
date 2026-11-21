@@ -63,6 +63,13 @@ use crate::*;
 
 pub type AllocState = VClockAlloc;
 
+/// A point in the execution of one thread: the thread and its own clock value then.
+#[derive(Clone, Copy, Debug)]
+pub struct MadeAt {
+    index: VectorIdx,
+    timestamp: VTimestamp,
+}
+
 /// Valid atomic read-write orderings, alias of atomic::Ordering (not non-exhaustive).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum AtomicRwOrd {
@@ -1073,6 +1080,17 @@ impl VClockAlloc {
         }
     }
 
+    /// Creates the clocks of an allocation that is created now but stands for memory that
+    /// was written at `made_at`: accesses race with that write, not with this creation.
+    pub fn new_allocation_made_at(len: Size, made_at: MadeAt) -> VClockAlloc {
+        VClockAlloc {
+            alloc_ranges: RefCell::new(DedupRangeMap::new(
+                len,
+                MemoryCellClocks::new(made_at.timestamp, made_at.index),
+            )),
+        }
+    }
+
     // Find an index, if one exists where the value
     // in `l` is greater than the value in `r`.
     fn find_gt_index(l: &VClock, r: &VClock) -> Option<VectorIdx> {
@@ -1986,6 +2004,12 @@ impl GlobalState {
     /// Load the current vector clock in use and the current set of thread clocks
     /// in use for the vector.
     #[inline]
+    /// The current point in the execution of the active thread.
+    pub fn active_thread_now(&self, thread_mgr: &ThreadManager<'_>) -> MadeAt {
+        let (index, clocks) = self.active_thread_state(thread_mgr);
+        MadeAt { index, timestamp: clocks.clock[index] }
+    }
+
     pub(super) fn active_thread_state(
         &self,
         thread_mgr: &ThreadManager<'_>,

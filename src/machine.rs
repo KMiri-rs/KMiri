@@ -547,6 +547,10 @@ pub struct MiriMachine<'tcx> {
     /// A set that contains `AllocId`s of cpu-local `Allocation`s
     pub cpu_local_alloc_set: RefCell<FxHashSet<AllocId>>,
 
+    /// The copies of the CPU-local section that the program made with
+    /// `kern_miri_copy_cpu_local_section`.
+    pub cpu_local_copies: RefCell<Vec<crate::alloc_addresses::CpuLocalCopy>>,
+
     /// Environment variables.
     pub(crate) env_vars: EnvVars<'tcx>,
 
@@ -1014,6 +1018,7 @@ impl<'tcx> MiriMachine<'tcx> {
             float_rounding_error: config.float_rounding_error,
             short_fd_operations: config.short_fd_operations,
             cpu_local_alloc_set: RefCell::new(FxHashSet::default()),
+            cpu_local_copies: RefCell::new(Vec::new()),
             kernel_threads: FxHashSet::default(),
             pt_checker: None,
             record: Vec::new(),
@@ -1856,43 +1861,12 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
             && (final_paddr >= mirch::kernel_static_start_addr() as u64)
             && alloc_size_usize > 0
         {
-            let mut new_allocation = mirch::create_allocation_at(
-                final_paddr as usize,
-                Layout::from_size_align(alloc_size_usize, origin_alloc.align.bytes_usize())
-                    .unwrap(),
-                ecx.machine.get_default_alloc_params(),
-            );
+            let mut new_allocation = place_allocation_at(ecx, final_paddr as usize, &origin_alloc);
 
             // The allocation in the pseudo physical memory is created writable. Keep the
             // mutability of the static: a `static` without interior mutability is read-only,
             // and writing to it is undefined behavior no matter how the pointer was obtained.
             new_allocation.mutability = origin_alloc.mutability;
-
-            let alloc_range =
-                rustc_middle::mir::interpret::alloc_range(Size::ZERO, origin_alloc.size());
-            let init_mask = origin_alloc.init_mask();
-
-            // A fully uninitialized source still has a mask to preserve. The
-            // backing bytes cannot turn its unknown value into initialized data.
-            let init_copy = init_mask.prepare_copy((0..alloc_size_usize).into());
-            new_allocation.init_mask_apply_copy(init_copy, alloc_range, 1);
-
-            if !init_mask.is_range_initialized(alloc_range).is_err_and(|range| {
-                range.start == alloc_range.start && range.size == alloc_range.size
-            }) {
-                // Copy context
-                let src_ptr = origin_alloc.get_bytes_unchecked_raw();
-                let dst_ptr = new_allocation.get_bytes_unchecked_raw_mut();
-                unsafe {
-                    core::ptr::copy(src_ptr, dst_ptr, alloc_size_usize);
-                }
-
-                // Copy provenance
-                // FIXME: not sure if the code here is correct, because provenance API has changed.
-                let provenance_copy =
-                    origin_alloc.provenance().prepare_copy(alloc_range, &[0], ecx);
-                new_allocation.provenance_apply_copy(provenance_copy, alloc_range, 1);
-            }
 
             new_allocation.with_extra(extra)
         } else {
@@ -2575,4 +2549,46 @@ macro_rules! callback {
             _phantom: std::marker::PhantomData
         })
     }};
+}
+
+/// Places a copy of `origin_alloc` (bytes, initialization, provenance) in the simulated
+/// physical memory at `paddr`. The copy is writable.
+pub(crate) fn place_allocation_at<'tcx>(
+    ecx: &MiriInterpCx<'tcx>,
+    paddr: usize,
+    origin_alloc: &Allocation<Provenance, (), MiriAllocBytes>,
+) -> Allocation<Provenance, (), MiriAllocBytes> {
+    let alloc_size_usize = origin_alloc.size().bytes_usize();
+    let mut new_allocation = mirch::create_allocation_at(
+        paddr,
+        Layout::from_size_align(alloc_size_usize, origin_alloc.align.bytes_usize()).unwrap(),
+        ecx.machine.get_default_alloc_params(),
+    );
+
+    let alloc_range = rustc_middle::mir::interpret::alloc_range(Size::ZERO, origin_alloc.size());
+    let init_mask = origin_alloc.init_mask();
+
+    // A fully uninitialized source still has a mask to preserve. The
+    // backing bytes cannot turn its unknown value into initialized data.
+    let init_copy = init_mask.prepare_copy((0..alloc_size_usize).into());
+    new_allocation.init_mask_apply_copy(init_copy, alloc_range, 1);
+
+    if !init_mask
+        .is_range_initialized(alloc_range)
+        .is_err_and(|range| range.start == alloc_range.start && range.size == alloc_range.size)
+    {
+        // Copy context
+        let src_ptr = origin_alloc.get_bytes_unchecked_raw();
+        let dst_ptr = new_allocation.get_bytes_unchecked_raw_mut();
+        unsafe {
+            core::ptr::copy(src_ptr, dst_ptr, alloc_size_usize);
+        }
+
+        // Copy provenance
+        // FIXME: not sure if the code here is correct, because provenance API has changed.
+        let provenance_copy = origin_alloc.provenance().prepare_copy(alloc_range, &[0], ecx);
+        new_allocation.provenance_apply_copy(provenance_copy, alloc_range, 1);
+    }
+
+    new_allocation
 }
