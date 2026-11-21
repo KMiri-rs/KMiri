@@ -1228,6 +1228,11 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let paddr = this.read_target_usize(paddr)? as usize;
                 mirch::set_page_table(PageTable::new(paddr));
             }
+            "kern_miri_copy_cpu_local_section" => {
+                let [dst] = this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let dst = this.read_target_usize(dst)? as usize;
+                this.copy_cpu_local_section(dst)?;
+            }
             "kern_miri_get_cpu_local_va" => {
                 let [cpu_local_va] =
                     this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;

@@ -533,6 +533,8 @@ pub enum TypedKind {
     PageTable = 2,
     Stack = 3,
     Interpreter = 4,
+    /// A copy of the CPU-local section, made by `kern_miri_copy_cpu_local_section`.
+    CpuLocalCopy = 5,
 }
 
 impl TypedKind {
