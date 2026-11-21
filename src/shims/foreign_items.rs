@@ -831,6 +831,48 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
 
             // kmiri
             // Used for tests
+            // Returns a pointer to the `index`-th static placed in the link section whose
+            // name is the UTF-8 string at `name` (`name_len` bytes), or null past the end.
+            // A kernel's linker script collects such statics into one array between two
+            // symbols. In KMiri every static is its own allocation, so offsetting from one
+            // item to the next would leave the allocation; the kernel walks the section one
+            // item at a time instead. Items are listed in exported-symbol order.
+            "kern_miri_link_section_item" => {
+                let [name, name_len, index] =
+                    this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let name = this.read_pointer(name)?;
+                let name_len = this.read_target_usize(name_len)?;
+                let index = this.read_target_usize(index)?;
+                let name = this.read_bytes_ptr_strip_provenance(name, Size::from_bytes(name_len))?;
+                let Ok(name) = String::from_utf8(name.to_vec()) else {
+                    throw_unsup_format!("`kern_miri_link_section_item`: section name is not UTF-8");
+                };
+                let tcx = this.tcx.tcx;
+                let mut items = vec![];
+                helpers::iter_exported_symbols(tcx, |_cnum, def_id| {
+                    if !tcx.is_foreign_item(def_id)
+                        && matches!(tcx.def_kind(def_id), DefKind::Static { .. })
+                        && !tcx.is_thread_local_static(def_id)
+                        && tcx
+                            .codegen_fn_attrs(def_id)
+                            .link_section
+                            .is_some_and(|s| s.as_str() == name)
+                    {
+                        items.push(def_id);
+                    }
+                    interp_ok(())
+                })?;
+                match usize::try_from(index).ok().and_then(|i| items.get(i)) {
+                    Some(&def_id) => {
+                        let alloc_id = tcx.reserve_and_set_static_alloc(def_id);
+                        let ptr = this.global_root_pointer(
+                            rustc_middle::mir::interpret::Pointer::from(alloc_id),
+                        )?;
+                        this.write_pointer(ptr, dest)?;
+                    }
+                    None => this.write_null(dest)?,
+                }
+            }
             "kern_miri_record_time" => {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 let [test_id] =
