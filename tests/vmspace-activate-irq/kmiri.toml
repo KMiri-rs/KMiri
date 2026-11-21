@@ -2,11 +2,11 @@ page_table = true
 total_mem_size = 0x800_0000
 
 # Inject a timer interrupt after each basic block with probability 0.0002
-# (seed 1). Also used by `tests/vmspace-activate-irq-control`.
+# (seed 2). Also used by `tests/vmspace-activate-irq-control`.
 [irq]
 enabled = true
 tick_interval_basic_blocks = 0
 inject_at_basic_blocks = []
 random_injection_rate = 0.0002
-random_seed = 1
+random_seed = 2
 trace = false
