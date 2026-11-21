@@ -21,15 +21,9 @@ LL | fn work(r: &mut u32) {
                at tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
            1: entry
                at tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
-           2: <u32 as std::iter::Step>::forward_unchecked
-               at RUSTLIB/core/src/iter/range.rs:LL:CC
-           3: <std::ops::Range<u32> as std::iter::range::RangeIteratorImpl>::spec_next
-               at RUSTLIB/core/src/iter/range.rs:LL:CC
-           4: std::iter::range::<impl std::iter::Iterator for std::ops::Range<u32>>::next
-               at RUSTLIB/core/src/iter/range.rs:LL:CC
-           5: work
+           2: work
                at tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
-           6: main
+           3: main
                at tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
 
 note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace

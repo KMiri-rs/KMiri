@@ -1010,17 +1010,41 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     }
                 }
             }
-            "kern_miri_init_ap" => {
-                let [cpu_id, func, args, task, stack_end, stack_size] =
+            "kern_miri_cpu_count" => {
+                let [] = this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let num_cpus = this.machine.threads.num_cpus();
+                this.write_scalar(
+                    Scalar::from_target_usize(num_cpus.try_into().unwrap(), this),
+                    dest,
+                )?;
+            }
+            "kern_miri_current_cpu" => {
+                let [] = this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let cpu = this.machine.threads.active_cpu;
+                this.write_scalar(Scalar::from_target_usize(cpu.try_into().unwrap(), this), dest)?;
+            }
+            "kern_miri_start_cpu" => {
+                // Starts CPU `cpu`, which is off, at `func(arg)` on the given stack, like a
+                // startup IPI. Everything the caller did before is visible to the new CPU's
+                // first step: the same edge as creating a thread.
+                let [cpu, func, arg, stack_end, stack_size] =
                     this.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
-                let cpu_id = this.read_target_usize(cpu_id)?;
+                let cpu = this.read_target_usize(cpu)?;
                 let start_routine = this.read_pointer(func)?;
-                let func_arg = this.read_immediate(args)?;
-                // The AP path does not yet record the thread id in the task context
-                // (OSTD keeps this call disabled; multi-CPU is not modelled).
-                let _task = this.deref_pointer(task)?;
+                let func_arg = this.read_immediate(arg)?;
                 let stack_end = this.read_target_usize(stack_end)?;
                 let stack_size = this.read_target_usize(stack_size)?;
+                let num_cpus = this.machine.threads.num_cpus();
+                let Some(cpu) = usize::try_from(cpu).ok().filter(|&cpu| cpu < num_cpus) else {
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "the program tried to start CPU {cpu}, but the machine has {num_cpus} CPUs"
+                    )))
+                };
+                if this.machine.threads.is_cpu_started(cpu) {
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "the program tried to start CPU {cpu}, which is already running"
+                    )))
+                }
                 let id = this.start_regular_thread(
                     None,
                     start_routine,
@@ -1032,8 +1056,10 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                         end: stack_end as usize,
                     }),
                 )?;
-                this.set_ap_init_thread(cpu_id as usize, id);
-                assert!(this.machine.kernel_threads.insert(id));
+                this.machine.kernel_threads.insert(id);
+                this.machine.threads.start_cpu(cpu, id);
+                // A CPU comes out of reset with interrupts disabled.
+                this.machine.irq_cpus[cpu].enabled = false;
             }
             "miri_create_new_thread" => {
                 // Returns the new thread's id. OSTD stores it in the task's saved

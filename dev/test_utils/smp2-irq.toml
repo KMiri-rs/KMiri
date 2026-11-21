@@ -1,0 +1,10 @@
+page_table = false
+total_mem_size = 0x8000000
+
+[irq]
+enabled = true
+
+[smp]
+num_cpus = 2
+switch_rate = 0.0
+seed = 0

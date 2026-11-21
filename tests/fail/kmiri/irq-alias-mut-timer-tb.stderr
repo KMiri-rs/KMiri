@@ -17,7 +17,7 @@ help: the accessed tag <TAG> later transitioned to Disabled due to a foreign wri
    |
 LL |         *core::ptr::addr_of_mut!(STATE) += 1;
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = help: this transition corresponds to a loss of read and write permissions
+   = help: this transition corresponds to a loss of read permissions
 
 note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
 

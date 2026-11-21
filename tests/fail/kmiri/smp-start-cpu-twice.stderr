@@ -1,0 +1,17 @@
+error: abnormal termination: the program tried to start CPU 1, which is already running
+  --> tests/fail/kmiri/../../../dev/test_utils/smp.rs:LL:CC
+   |
+LL |     unsafe { kern_miri_start_cpu(cpu, func, arg, $HEX + cpu * $HEX, $HEX) }
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ abnormal termination occurred here
+   |
+   = note: this is on thread `main`
+   = note: stack backtrace:
+           0: smp::start
+               at tests/fail/kmiri/../../../dev/test_utils/smp.rs:LL:CC
+           1: main
+               at tests/fail/kmiri/smp-start-cpu-twice.rs:LL:CC
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+

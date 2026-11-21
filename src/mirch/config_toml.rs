@@ -36,6 +36,44 @@ pub struct KMiriConfigToml {
     /// Configuration for KMiri's optional interrupt model.
     #[serde(default)]
     irq: IrqConfigToml,
+    /// Configuration for the simulated CPUs.
+    #[serde(default)]
+    smp: SmpConfigToml,
+}
+
+/// Configuration for the simulated CPUs.
+///
+/// CPU 0 runs the program's entry point. Every other CPU stays off until the
+/// program starts it with `kern_miri_start_cpu`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct SmpConfigToml {
+    num_cpus: usize,
+    /// Probability that, at the end of a basic block, execution moves to another
+    /// running CPU chosen uniformly at random.
+    switch_rate: f64,
+    /// Seed of the random choices about which CPU runs next.
+    seed: u64,
+}
+
+impl Default for SmpConfigToml {
+    fn default() -> Self {
+        Self { num_cpus: 1, switch_rate: 0.01, seed: 0 }
+    }
+}
+
+impl SmpConfigToml {
+    pub fn num_cpus(&self) -> usize {
+        self.num_cpus
+    }
+
+    pub fn switch_rate(&self) -> f64 {
+        self.switch_rate
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
 }
 
 /// Configuration for deterministic and randomized interrupt injection.
@@ -102,6 +140,19 @@ impl KMiriConfigToml {
                 path.display()
             ));
         }
+        let rate = config.smp.switch_rate;
+        if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
+            return Err(format!(
+                "invalid `[smp].switch_rate` in `{}`: expected a value in 0.0..=1.0",
+                path.display()
+            ));
+        }
+        if config.smp.num_cpus == 0 {
+            return Err(format!(
+                "invalid `[smp].num_cpus` in `{}`: expected at least 1",
+                path.display()
+            ));
+        }
         Ok(config)
     }
 
@@ -135,6 +186,10 @@ impl KMiriConfigToml {
 
     pub fn irq(&self) -> &IrqConfigToml {
         &self.irq
+    }
+
+    pub fn smp(&self) -> &SmpConfigToml {
+        &self.smp
     }
 }
 

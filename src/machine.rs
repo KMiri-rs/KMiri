@@ -44,7 +44,7 @@ use crate::concurrency::{
 };
 use crate::debugger::reachability;
 use crate::helpers::{adjust_stack_addr, is_no_core};
-use crate::mirch::{self, IrqConfigToml, PageState, TypedKind};
+use crate::mirch::{self, IrqConfigToml, PageState, SmpConfigToml, TypedKind};
 use crate::shims::readiness::DelayedReadinessUpdates;
 use crate::*;
 
@@ -490,9 +490,6 @@ impl<'tcx> PrimitiveLayouts<'tcx> {
     }
 }
 
-/// The number of CPUs that KernMiri emulates.
-pub const CPU_NUM: usize = 2;
-
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum IrqSource {
     Timer,
@@ -683,6 +680,10 @@ pub struct MiriMachine<'tcx> {
     pub(crate) irq_config: IrqConfigToml,
     pub(crate) irq_cpus: Vec<CpuIrqState>,
     pub(crate) irq_rng: StdRng,
+    /// Configuration of the simulated CPUs.
+    pub(crate) smp_config: SmpConfigToml,
+    /// Random choices about which CPU runs next.
+    pub(crate) smp_rng: StdRng,
     pub(crate) next_irq_event_id: u64,
     pub(crate) irq_entry: Option<Instance<'tcx>>,
     pub(crate) timer_vector: Option<u8>,
@@ -831,6 +832,9 @@ impl<'tcx> MiriMachine<'tcx> {
         let irq_config =
             config.kmiri_toml.as_ref().map(|toml| toml.irq().clone()).unwrap_or_default();
         let irq_rng = StdRng::seed_from_u64(irq_config.random_seed());
+        let smp_config =
+            config.kmiri_toml.as_ref().map(|toml| toml.smp().clone()).unwrap_or_default();
+        let smp_rng = StdRng::seed_from_u64(smp_config.seed());
         let rng = StdRng::seed_from_u64(config.seed.unwrap_or(0));
         let borrow_tracker = config.borrow_tracker.map(|bt| bt.instantiate_global_state(config));
         let data_race = if config.genmc_config.is_some() {
@@ -955,8 +959,10 @@ impl<'tcx> MiriMachine<'tcx> {
             report_progress: config.report_progress,
             basic_block_count: 0,
             irq_config,
-            irq_cpus: (0..CPU_NUM).map(|_| CpuIrqState::new()).collect(),
+            irq_cpus: (0..smp_config.num_cpus()).map(|_| CpuIrqState::new()).collect(),
             irq_rng,
+            smp_config,
+            smp_rng,
             next_irq_event_id: 0,
             irq_entry: None,
             timer_vector: None,
