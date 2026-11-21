@@ -3,7 +3,7 @@ SYSROOT := $(shell rustc --print sysroot)
 MIRI_SYSROOT_REBUILT := /root/.cache/miri
 
 ASTERINAS_TOML := $(PROJ)/tests/asterinas.toml
-ASTERINAS_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(ASTERINAS_TOML) -Zmiri-permissive-provenance"
+ASTERINAS_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(ASTERINAS_TOML) -Zmiri-permissive-provenance -Zmiri-tree-borrows"
 
 define RUN_IRQ_RCU_UAF_TEST
 log=$$(mktemp); \
@@ -20,7 +20,7 @@ endef
 
 # `vmspace-activate-irq` needs injected timer interrupts, so it and its control
 # run with that test's own kmiri.toml.
-VMSPACE_IRQ_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/vmspace-activate-irq/kmiri.toml -Zmiri-permissive-provenance"
+VMSPACE_IRQ_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/vmspace-activate-irq/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows"
 
 define RUN_VMSPACE_ACTIVATE_IRQ_TEST
 log=$$(mktemp); \
