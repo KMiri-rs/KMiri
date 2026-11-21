@@ -550,6 +550,8 @@ pub struct MiriMachine<'tcx> {
     /// The copies of the CPU-local section that the program made with
     /// `kern_miri_copy_cpu_local_section`.
     pub cpu_local_copies: RefCell<Vec<crate::alloc_addresses::CpuLocalCopy>>,
+    /// When each page was last typed, by page index: its slots exist from then on.
+    pub typed_page_made_at: RefCell<FxHashMap<usize, crate::concurrency::data_race::MadeAt>>,
 
     /// Environment variables.
     pub(crate) env_vars: EnvVars<'tcx>,
@@ -1019,6 +1021,7 @@ impl<'tcx> MiriMachine<'tcx> {
             short_fd_operations: config.short_fd_operations,
             cpu_local_alloc_set: RefCell::new(FxHashSet::default()),
             cpu_local_copies: RefCell::new(Vec::new()),
+            typed_page_made_at: RefCell::new(FxHashMap::default()),
             kernel_threads: FxHashSet::default(),
             pt_checker: None,
             record: Vec::new(),

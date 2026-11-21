@@ -1218,6 +1218,13 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     mirch::check_page_state(paddr + page_index * page_size, PageState::Untyped)?;
                 }
                 type_pages_at(paddr, count, slot_size, page_type)?;
+                if let Some(data_race) = this.machine.data_race.as_vclocks_ref() {
+                    let now = data_race.active_thread_now(&this.machine.threads);
+                    let mut made_at = this.machine.typed_page_made_at.borrow_mut();
+                    for page_index in 0..count {
+                        made_at.insert(paddr / page_size + page_index, now);
+                    }
+                }
             }
             "kern_miri_get_root_page_table" => {
                 let root_paddr = mirch::physical_mem().page_table.as_ref().unwrap().root_paddr();

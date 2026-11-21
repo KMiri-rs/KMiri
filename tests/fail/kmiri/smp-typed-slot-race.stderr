@@ -1,0 +1,24 @@
+error: Undefined Behavior: Data race detected between (1) creating a new allocation on thread `main` and (2) atomic load on thread `unnamed-ID` at ALLOC
+  --> tests/fail/kmiri/smp-typed-slot-race.rs:LL:CC
+   |
+LL |     slot.load(Ordering::Acquire);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ (2) just happened here
+   |
+help: and (1) occurred earlier here
+  --> tests/fail/kmiri/smp-typed-slot-race.rs:LL:CC
+   |
+LL |         kern_miri_retype_pages(PAGE, 1, TypedKind::PageTable, 8);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: this indicates a bug in the program: it performed an invalid operation, and caused Undefined Behavior
+   = help: see https://doc.rust-lang.org/nightly/reference/behavior-considered-undefined.html for further information
+   = note: this is on thread `unnamed-ID`
+note: the current function got called indirectly due to this code
+  --> tests/fail/kmiri/../../../dev/test_utils/smp.rs:LL:CC
+   |
+LL |     unsafe { kern_miri_start_cpu(cpu, func, arg, stack_end, $HEX) }
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
