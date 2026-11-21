@@ -7,6 +7,7 @@ use std::task::Poll;
 use std::time::{Duration, SystemTime};
 
 use rand::RngExt;
+use rand::seq::IteratorRandom;
 use rustc_abi::ExternAbi;
 use rustc_data_structures::either::Either;
 use rustc_data_structures::fx::FxHashMap;
@@ -20,7 +21,6 @@ use rustc_target::spec::Os;
 
 use crate::concurrency::GlobalDataRaceHandler;
 use crate::concurrency::scheduler::SchedulingAction;
-use crate::machine::CPU_NUM;
 use crate::mirch::{
     self, config_stack_mem_size, kernel_code_paddr_to_vaddr, kernel_stack_end_addr, total_mem_size,
 };
@@ -472,9 +472,9 @@ pub struct ThreadManager<'tcx> {
     /// The machine will keep the old executed CPU if the value is `None`.
     next_cpu: Option<usize>,
     /// An array stores the mapping between CPU number and the `ThreadId`.
-    cpu_to_threads: [Option<ThreadId>; crate::machine::CPU_NUM],
+    cpu_to_threads: Vec<Option<ThreadId>>,
     /// An array stores the base virtual address of cpu local variables for each CPU.
-    pub cpu_local_base: [usize; crate::machine::CPU_NUM],
+    pub cpu_local_base: Vec<usize>,
     /// Threads used in the program.
     ///
     /// Note that this vector also contains terminated threads.
@@ -487,7 +487,7 @@ pub struct ThreadManager<'tcx> {
     /// A flag that indicates that we should do round robin scheduling of threads else randomized scheduling is used.
     fixed_scheduling: bool,
     /// An array records ID of the next thread to execute for each CPU.
-    next_thread: [Option<ThreadId>; crate::machine::CPU_NUM],
+    next_thread: Vec<Option<ThreadId>>,
     /// Reusable stack allocation regions.
     stack_pool: StackPool,
 }
@@ -571,11 +571,13 @@ impl<'tcx> ThreadManager<'tcx> {
             kernel_code_paddr_to_vaddr(mirch::kernel_stack_start_addr()) as u64
                 ..kernel_code_paddr_to_vaddr(mirch::kernel_stack_end_addr()) as u64,
         ));
-        let mut cpu_to_threads = [None; CPU_NUM];
+        let num_cpus = config.kmiri_toml.as_ref().map(|toml| toml.smp().num_cpus()).unwrap_or(1);
+        // Only CPU 0 runs at reset; the others start with `kern_miri_start_cpu`.
+        let mut cpu_to_threads = vec![None; num_cpus];
         cpu_to_threads[0] = Some(ThreadId::MAIN_THREAD);
         // The CPU-local base register holds its reset value 0 until the kernel's boot
         // code sets it (`kern_miri_set_cpu_local_base`), as on hardware.
-        let cpu_local_base = [0; CPU_NUM];
+        let cpu_local_base = vec![0; num_cpus];
         Self {
             active_thread: ThreadId::MAIN_THREAD,
             cpu_to_threads,
@@ -586,7 +588,7 @@ impl<'tcx> ThreadManager<'tcx> {
             thread_local_allocs: Default::default(),
             yield_active_thread: false,
             fixed_scheduling: config.fixed_scheduling,
-            next_thread: [None; CPU_NUM],
+            next_thread: vec![None; num_cpus],
             stack_pool: StackPool { stack_pool: Vec::new(), next_stack_id: 1 },
         }
     }
@@ -624,6 +626,40 @@ impl<'tcx> ThreadManager<'tcx> {
 
     pub fn current_cpu_local_base(&self) -> usize {
         self.cpu_local_base[self.active_cpu]
+    }
+
+    /// The number of simulated CPUs, including those not started yet.
+    pub fn num_cpus(&self) -> usize {
+        self.cpu_to_threads.len()
+    }
+
+    pub fn is_cpu_started(&self, cpu: usize) -> bool {
+        self.cpu_to_threads[cpu].is_some()
+    }
+
+    /// Makes `thread` the context that CPU `cpu` runs from now on.
+    pub fn start_cpu(&mut self, cpu: usize, thread: ThreadId) {
+        assert!(self.cpu_to_threads[cpu].is_none());
+        self.cpu_to_threads[cpu] = Some(thread);
+    }
+
+    /// The started CPUs, other than the active one, whose current context can take a step.
+    pub fn other_runnable_cpus(&self) -> Vec<usize> {
+        (0..self.num_cpus())
+            .filter(|&cpu| {
+                cpu != self.active_cpu
+                    && self.cpu_to_threads[cpu].is_some_and(|t| self.threads[t].state.is_enabled())
+            })
+            .collect()
+    }
+
+    /// Moves execution to the CPU chosen by a CPU switch, if one was requested.
+    /// The thread that CPU was running continues where it stopped.
+    pub fn apply_cpu_switch(&mut self) {
+        if let Some(cpu) = self.next_cpu.take() {
+            self.active_cpu = cpu;
+            self.active_thread = self.cpu_to_threads[cpu].unwrap();
+        }
     }
 
     /// Check if we have an allocation for the given thread local static for the
@@ -805,6 +841,17 @@ impl<'tcx> ThreadManager<'tcx> {
         // Honor it before falling back to the main thread.
         if let Some(id) = self.next_thread[self.active_cpu] {
             assert_ne!(self.active_thread, id);
+            if let Some(other) = self.cpu_to_threads.iter().position(|&t| t == Some(id)) {
+                return Some(
+                    Err(rustc_middle::mir::interpret::InterpErrorKind::MachineStop(Box::new(
+                        TerminationInfo::Abort(format!(
+                            "the program switched CPU {} to a context that CPU {other} is running",
+                            self.active_cpu
+                        )),
+                    )))
+                    .into(),
+                );
+            }
             let old_id = self.active_thread;
             self.active_thread = id;
             self.cpu_to_threads[self.active_cpu] = Some(id);
@@ -833,13 +880,20 @@ impl<'tcx> ThreadManager<'tcx> {
             }
         }
         if let ThreadState::Terminated = self.threads[self.active_thread].state {
+            if self.active_cpu != 0 {
+                // The context a started CPU was running returned with no successor:
+                // that CPU stops, and execution continues on another running CPU.
+                self.cpu_to_threads[self.active_cpu] = None;
+                let cpu = self.other_runnable_cpus().first().copied().unwrap_or(0);
+                self.active_cpu = cpu;
+                self.active_thread = self.cpu_to_threads[cpu].unwrap_or(ThreadId::MAIN_THREAD);
+                return Some(interp_ok(SchedulingAction::ExecuteStep));
+            }
             self.active_thread = ThreadId::MAIN_THREAD;
             return Some(interp_ok(SchedulingAction::ExecuteStep));
         }
-        if let Some(next_cpu) = self.next_cpu {
-            self.active_cpu = next_cpu;
-            self.active_thread = self.cpu_to_threads[next_cpu].unwrap();
-            self.next_cpu = None;
+        if self.next_cpu.is_some() {
+            self.apply_cpu_switch();
             return Some(interp_ok(SchedulingAction::ExecuteStep));
         }
         None
@@ -899,12 +953,6 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             this.machine.threads.set_thread_local_alloc(def_id, ptr);
             interp_ok(ptr)
         }
-    }
-
-    fn set_ap_init_thread(&mut self, cpu_id: usize, thread_id: ThreadId) {
-        let this = self.eval_context_mut();
-        let threads = &mut this.machine.threads;
-        threads.cpu_to_threads[cpu_id] = Some(thread_id);
     }
 
     /// Start a regular (non-main) thread.
@@ -1068,9 +1116,14 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         // Kernel tasks return to their queued successor, or to the bootstrap
         // thread. That handoff waits for this entry and its destructors to end.
         // Ordinary std/pthread threads must still use their explicit join path.
-        if this.machine.kernel_threads.contains(&thread_id) {
-            let next = this.machine.threads.next_thread[this.machine.threads.active_cpu]
-                .unwrap_or(ThreadId::MAIN_THREAD);
+        let cpu = this.machine.threads.active_cpu;
+        let successor =
+            this.machine.threads.next_thread[cpu].or((cpu == 0).then_some(ThreadId::MAIN_THREAD));
+        // On a started CPU, a context that returns with no successor just stops that
+        // CPU: nothing runs after it there, so it synchronizes with nobody.
+        if this.machine.kernel_threads.contains(&thread_id)
+            && let Some(next) = successor
+        {
             let old = this.machine.threads.set_active_thread(next);
             match &mut this.machine.data_race {
                 GlobalDataRaceHandler::None => {}
@@ -1388,13 +1441,31 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         }
     }
 
+    /// At the end of a basic block, moves execution to another running CPU with
+    /// probability `[smp].switch_rate`. Draws nothing while only one CPU runs, so
+    /// single-CPU runs see the same random choices as before.
     fn maybe_switch_cpu(&mut self) {
         let this = self.eval_context_mut();
-        if this.machine.rng.get_mut().random_bool(0.02) {
-            let next_cpu = (this.machine.threads.active_cpu + 1) % CPU_NUM;
-            if this.machine.threads.cpu_to_threads[next_cpu].is_some() {
-                this.machine.threads.next_cpu = Some(next_cpu);
-            }
+        let rate = this.machine.smp_config.switch_rate();
+        if rate == 0.0
+            || this.machine.threads.num_cpus() == 1
+            || this.machine.threads.next_cpu.is_some()
+        {
+            return;
+        }
+        let others = this.machine.threads.other_runnable_cpus();
+        if !others.is_empty() && this.machine.smp_rng.random_bool(rate) {
+            this.machine.threads.next_cpu = others.into_iter().choose(&mut this.machine.smp_rng);
+        }
+    }
+
+    /// A CPU context yielded (for example a spin-loop hint): let another running CPU,
+    /// chosen at random, take the next step. With no other running CPU it continues.
+    fn yield_to_other_cpu(&mut self) {
+        let this = self.eval_context_mut();
+        let others = this.machine.threads.other_runnable_cpus();
+        if let Some(cpu) = others.into_iter().choose(&mut this.machine.smp_rng) {
+            this.machine.threads.next_cpu = Some(cpu);
         }
     }
 }

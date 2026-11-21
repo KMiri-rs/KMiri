@@ -55,11 +55,16 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
     fn schedule(&mut self) -> InterpResult<'tcx, SchedulingAction> {
         let this = self.eval_context_mut();
 
-        // A simulated IRQ runs synchronously on the interrupted thread and CPU.
-        // Do not honor a pending preemption or CPU switch until its handler returns.
+        // A simulated IRQ runs synchronously on the interrupted thread and CPU, so
+        // no other context of this CPU runs until its handler returns. Other CPUs
+        // keep running meanwhile: a yield in the handler (such as a spin-loop hint)
+        // lets another CPU run, and random CPU switches apply.
         let cpu = this.machine.threads.active_cpu;
         if this.machine.irq_cpus[cpu].active.is_some() {
-            this.machine.threads.yield_active_thread = false;
+            if std::mem::take(&mut this.machine.threads.yield_active_thread) {
+                this.yield_to_other_cpu();
+            }
+            this.machine.threads.apply_cpu_switch();
             return interp_ok(SchedulingAction::ExecuteStep);
         }
 
@@ -96,6 +101,20 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
         if let Some(res) = thread_manager.schedule_switch_thread_and_cpu() {
             return res;
         }
+
+        // kmiri: kernel contexts are resumed only by the kernel's own switches, never
+        // picked by the scheduler below. A yield of a CPU context (a spin-loop hint or
+        // a preemption point) lets another CPU run instead.
+        if this.machine.threads.yield_active_thread
+            && !this.machine.kernel_threads.is_empty()
+            && this.machine.threads.active_thread_ref().is_enabled()
+        {
+            this.machine.threads.yield_active_thread = false;
+            this.yield_to_other_cpu();
+            this.machine.threads.apply_cpu_switch();
+            return interp_ok(SchedulingAction::ExecuteStep);
+        }
+        let thread_manager = &mut this.machine.threads;
 
         // Check if we can just keep running the current thread.
         if thread_manager.active_thread_ref().is_enabled() && !thread_manager.yield_active_thread {

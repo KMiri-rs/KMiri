@@ -1,4 +1,4 @@
-KMiri IRQ: cpu=0 action=entry-registered block_count=369
+KMiri IRQ: cpu=0 action=entry-registered block_count=396
 error: abnormal termination: kern_miri_test_raise_irq: vector 3 is reserved for CPU exceptions (valid range 32..=255)
   --> tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
    |
