@@ -61,7 +61,10 @@ impl<'tcx> MiriMachine<'tcx> {
         {
             for module in tcx.foreign_modules(cnum).values() {
                 for &def_id in &module.foreign_items {
-                    if !matches!(tcx.def_kind(def_id), rustc_hir::def::DefKind::Static { .. }) {
+                    // Thread-local statics are per thread, not one shared allocation.
+                    if !matches!(tcx.def_kind(def_id), rustc_hir::def::DefKind::Static { .. })
+                        || tcx.is_thread_local_static(def_id)
+                    {
                         continue;
                     }
                     let instance = rustc_middle::ty::Instance::mono(tcx, def_id);
@@ -79,7 +82,9 @@ impl<'tcx> MiriMachine<'tcx> {
             let Some(instance) = ecx.lookup_exported_symbol_instance(link_name)? else {
                 continue;
             };
-            if !matches!(tcx.def_kind(instance.def_id()), rustc_hir::def::DefKind::Static { .. }) {
+            if !matches!(tcx.def_kind(instance.def_id()), rustc_hir::def::DefKind::Static { .. })
+                || tcx.is_thread_local_static(instance.def_id())
+            {
                 continue;
             }
             // Neither load the static's MIR nor `eval_global` it: both need its
