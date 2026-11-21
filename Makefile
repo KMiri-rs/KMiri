@@ -39,6 +39,28 @@ define RUN_VMSPACE_ACTIVATE_IRQ_CONTROL_TEST
 cd $(PROJ)/tests/vmspace-activate-irq-control && $(VMSPACE_IRQ_ENV_VARS) cargo osdk miri test
 endef
 
+# The SMP tests run with three CPUs, set in `tests/smp-ap-tasks/kmiri.toml`.
+SMP_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/smp-ap-tasks/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows"
+
+define RUN_SMP_AP_TASKS_TEST
+cd $(PROJ)/tests/smp-ap-tasks && $(SMP_ENV_VARS) cargo osdk miri test
+endef
+
+# Both sides of the reported race must be the unsynchronized `+= 1` on the
+# counter, which the diagnostic quotes once for each side.
+define RUN_SMP_DATA_RACE_TEST
+log=$$(mktemp); \
+if (cd $(PROJ)/tests/smp-data-race && $(SMP_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
+	cat "$$log"; rm -f "$$log"; echo "smp-data-race unexpectedly completed without aborting"; exit 1; \
+fi; \
+cat "$$log"; \
+if grep -q "Undefined Behavior: Data race detected" "$$log" && [ "$$(grep -cF 'unsafe { *COUNTER.0.get() += 1 }' "$$log")" -ge 2 ]; then \
+	echo "Observed expected data race on the counter."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "smp-data-race failed without the expected data race on the counter"; exit 1; \
+fi
+endef
+
 # Runs the ktests of tests/ktest-runner through tool/ktest-sweep.py and checks
 # that each one gets the expected result, including the test after the one that
 # hits Undefined Behavior.
@@ -81,6 +103,14 @@ else ifeq ($(ASTERINAS_TEST),vmspace-activate-irq-control)
 asterinas: install install-osdk
 	$(RUN_VMSPACE_ACTIVATE_IRQ_CONTROL_TEST)
 
+else ifeq ($(ASTERINAS_TEST),smp-ap-tasks)
+asterinas: install install-osdk
+	$(RUN_SMP_AP_TASKS_TEST)
+
+else ifeq ($(ASTERINAS_TEST),smp-data-race)
+asterinas: install install-osdk
+	$(RUN_SMP_DATA_RACE_TEST)
+
 else
 asterinas: install install-osdk
 	echo $(ASTERINAS_TEST)
@@ -92,7 +122,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    task-switch-back task-exit-last task-exit-with-runnable \
                    irq-simulation irq-trap-path irq-rcu-uaf \
                    irq-rcu-uaf-lifo heap-box-drop \
-                   vmspace-activate-irq vmspace-activate-irq-control
+                   vmspace-activate-irq vmspace-activate-irq-control \
+                   smp-ap-tasks smp-data-race
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -104,6 +135,10 @@ asterinas-test-all: install install-osdk
 			$(RUN_VMSPACE_ACTIVATE_IRQ_TEST); \
 		elif [ "$${test}" = vmspace-activate-irq-control ]; then \
 			($(RUN_VMSPACE_ACTIVATE_IRQ_CONTROL_TEST)); \
+		elif [ "$${test}" = smp-ap-tasks ]; then \
+			($(RUN_SMP_AP_TASKS_TEST)); \
+		elif [ "$${test}" = smp-data-race ]; then \
+			$(RUN_SMP_DATA_RACE_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
