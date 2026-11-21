@@ -440,7 +440,16 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             if let Some(size) = mirch::physical_mem_mut().pending_heap_slot_size.take() {
                 return Some(self.kernel_allocation_at(slot_start, size, align));
             }
-            let alloc_id = self.kernel_allocation_at(slot_start, slot_len, align);
+            // The slot has existed since the page was typed, however late it is
+            // first touched.
+            let made_at = self
+                .eval_context_ref()
+                .machine
+                .typed_page_made_at
+                .borrow()
+                .get(&page_index)
+                .copied();
+            let alloc_id = self.kernel_allocation_made_at(slot_start, slot_len, align, made_at);
             if page_type == TypedKind::Slab {
                 // Without a pending heap object this is the allocator itself
                 // accessing a free slot through its address, e.g. the
@@ -578,6 +587,16 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
 
     /// Construct a new alloc when a fresh paddr is accessed the first time.
     fn kernel_allocation_at(&self, paddr: usize, size: usize, align: usize) -> AllocId {
+        self.kernel_allocation_made_at(paddr, size, align, None)
+    }
+
+    fn kernel_allocation_made_at(
+        &self,
+        paddr: usize,
+        size: usize,
+        align: usize,
+        made_at: Option<data_race::MadeAt>,
+    ) -> AllocId {
         let ecx = self.eval_context_ref();
         let actual_paddr = paddr - paddr % align;
         let allocation = mirch::create_allocation_at(
@@ -585,7 +604,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             Layout::from_size_align(size, align).unwrap(),
             ecx.machine.get_default_alloc_params(),
         );
-        self.insert_kernel_allocation(paddr, actual_paddr, allocation, None)
+        self.insert_kernel_allocation(paddr, actual_paddr, allocation, made_at)
     }
 
     /// Adds `allocation`, which lies at `actual_paddr`, as a kernel allocation. With
