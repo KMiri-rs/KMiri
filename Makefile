@@ -39,6 +39,21 @@ define RUN_VMSPACE_ACTIVATE_IRQ_CONTROL_TEST
 cd $(PROJ)/tests/vmspace-activate-irq-control && $(VMSPACE_IRQ_ENV_VARS) cargo osdk miri test
 endef
 
+# Runs the ktests of tests/ktest-runner through tool/ktest-sweep.py and checks
+# that each one gets the expected result, including the test after the one that
+# hits Undefined Behavior.
+define RUN_KTEST_RUNNER_TEST
+out=$$(mktemp -d); \
+(cd $(PROJ)/tests/ktest-runner && $(ASTERINAS_ENV_VARS) python3 $(PROJ)/tool/ktest-sweep.py . "$$out") || true; \
+got=$$(awk -F'\t' '{ sub(/.*::/, "", $$1); print $$1 " " $$2 }' "$$out/ledger.tsv" | sort | tr '\n' ' '); \
+want="a_passes ok b_fails FAILED c_use_after_free ABORT d_passes_after_ub ok "; \
+if [ "$$got" = "$$want" ] && grep -q "has been freed" "$$out/ledger.tsv"; then \
+	echo "ktest-runner: PASS"; \
+else \
+	echo "ktest-runner: FAIL: got '$$got', want '$$want'"; cat "$$out/ledger.tsv"; exit 1; \
+fi
+endef
+
 DEBUG := --debug
 
 .PHONY: install
@@ -93,6 +108,11 @@ asterinas-test-all: install install-osdk
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
 	done
+	$(RUN_KTEST_RUNNER_TEST)
+
+.PHONY: asterinas-ktest-runner
+asterinas-ktest-runner: install install-osdk
+	$(RUN_KTEST_RUNNER_TEST)
 
 TOCK_BOARD := $(PROJ)/tock/boards/qemu_rv64_virt
 .PHONY: tock
