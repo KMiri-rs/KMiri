@@ -594,7 +594,11 @@ pub fn eval_entry<'tcx>(
 
         // If we get here there was no fatal error -- yet.
         // Possibly check for memory leaks.
-        if leak_check && !ignore_leaks {
+        // kmiri: when the bootstrap context returns, the machine powers off and the other
+        // CPUs stop where they are. Their stacks are still live, so nothing can be called
+        // a leak.
+        let powered_off_running_cpus = ecx.machine.threads.other_cpu_running();
+        if leak_check && !ignore_leaks && !powered_off_running_cpus {
             // Check for thread leaks.
             if !ecx.have_all_terminated() {
                 tcx.dcx()

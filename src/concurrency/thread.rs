@@ -637,6 +637,11 @@ impl<'tcx> ThreadManager<'tcx> {
         self.cpu_to_threads[cpu].is_some()
     }
 
+    /// Whether a CPU other than CPU 0 is still running a context.
+    pub fn other_cpu_running(&self) -> bool {
+        self.cpu_to_threads[1..].iter().flatten().any(|&t| !self.threads[t].state.is_terminated())
+    }
+
     /// Makes `thread` the context that CPU `cpu` runs from now on.
     pub fn start_cpu(&mut self, cpu: usize, thread: ThreadId) {
         assert!(self.cpu_to_threads[cpu].is_none());
