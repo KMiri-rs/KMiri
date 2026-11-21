@@ -889,7 +889,9 @@ impl<'tcx> ThreadManager<'tcx> {
                 self.active_thread = self.cpu_to_threads[cpu].unwrap_or(ThreadId::MAIN_THREAD);
                 return Some(interp_ok(SchedulingAction::ExecuteStep));
             }
+            // CPU 0 goes back to the bootstrap context.
             self.active_thread = ThreadId::MAIN_THREAD;
+            self.cpu_to_threads[0] = Some(ThreadId::MAIN_THREAD);
             return Some(interp_ok(SchedulingAction::ExecuteStep));
         }
         if self.next_cpu.is_some() {
