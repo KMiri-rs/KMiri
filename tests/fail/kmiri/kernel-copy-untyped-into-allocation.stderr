@@ -1,0 +1,12 @@
+error: unsupported operation: kernel copy range at $HEX runs from untyped pages into the interpreter allocation at paddr $HEX
+  --> tests/fail/kmiri/kernel-copy-untyped-into-allocation.rs:LL:CC
+   |
+LL |         kern_miri_copy(buf.as_mut_ptr(), at(LINEAR + DST + 4000), buf.len());
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsupported operation occurred here
+   |
+   = help: this is likely not a bug in the program; it indicates that the program performed an operation that Miri does not support
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+

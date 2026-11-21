@@ -16,6 +16,7 @@ unsafe extern "Rust" {
     pub fn kern_miri_write_bytes(paddr: usize, data: *const u8, len: usize);
     pub fn kern_miri_retype_pages(paddr: usize, count: usize, kind: TypedKind, slot_size: usize);
     pub fn kern_miri_copy_untyped(dst: usize, src: usize, len: usize);
+    pub fn kern_miri_copy(dst: *mut u8, src: *const u8, len: usize);
     pub fn kern_miri_set_root_page_table(paddr: usize);
 }
 
@@ -45,6 +46,12 @@ pub const DST: usize = 0x0401_0000;
 pub const LINEAR: usize = 0xffff_8000_0000_0000;
 pub const KERNEL: usize = 0xffff_ffff_8000_0000;
 pub const PT: usize = 0x0500_0000;
+
+/// The virtual address `vaddr` as a pointer, the way a kernel passes an address
+/// it computed (e.g. of a frame in its linear mapping) to `kern_miri_copy`.
+pub fn at(vaddr: usize) -> *mut u8 {
+    ptr::with_exposed_provenance_mut(vaddr)
+}
 
 // Build a minimal x86-64-style page table so that `LINEAR + X` resolves to
 // physical `X`. A single present + huge (PS) PML4 entry for `LINEAR`'s index
