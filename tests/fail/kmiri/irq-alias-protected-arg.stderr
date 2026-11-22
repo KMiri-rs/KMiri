@@ -1,4 +1,4 @@
-error: Undefined Behavior: not granting access to tag <TAG> because that would remove [Unique for <TAG>] which is strongly protected
+error: Undefined Behavior: not granting access to tag <TAG> because that would remove [Unique for <TAG>] which is strongly protected (i.e. it is in use as a function argument)
   --> tests/fail/kmiri/irq-alias-protected-arg.rs:LL:CC
    |
 LL |         *core::ptr::addr_of_mut!(STATE) += 1;
