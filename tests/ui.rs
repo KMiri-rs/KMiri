@@ -303,6 +303,13 @@ fn run_tests(
     let mut config = miri_config(target, path, mode, with_dependencies);
     config.with_args(&args);
     config.bless_command = Some("./miri test --bless".into());
+    // kmiri: KMiri's own tests (`*/kmiri/`) run as suites of their own, with KMiri's default
+    // preemption rate (0, as when interpreting a kernel). The upstream tests are written for
+    // upstream's default rate, so they run with that rate.
+    let kmiri_suite = path.ends_with("/kmiri");
+    if !kmiri_suite {
+        config.skip_files.push("/kmiri/".into());
+    }
 
     if env::var_os("MIRI_SKIP_UI_CHECKS").is_some() {
         assert!(!args.bless, "cannot use RUSTC_BLESS and MIRI_SKIP_UI_CHECKS at the same time");
@@ -333,6 +340,9 @@ fn run_tests(
             )
             .into(),
         );
+        if !kmiri_suite {
+            config.program.args.push("-Zmiri-preemption-rate=0.01".into());
+        }
         if let Ok(extra_flags) = env::var("MIRIFLAGS") {
             for flag in extra_flags.split_whitespace() {
                 config.program.args.push(flag.into());
@@ -472,16 +482,21 @@ fn main() -> Result<()> {
     }
 
     ui(Mode::Pass { native: false }, "tests/pass", &target, WithoutDeps, tmpdir.path())?;
+    ui(Mode::Pass { native: false }, "tests/pass/kmiri", &target, WithoutDeps, tmpdir.path())?;
     ui(Mode::Pass { native: false }, "tests/pass-dep", &target, WithDeps, tmpdir.path())?;
+    ui(Mode::Pass { native: false }, "tests/pass-dep/kmiri", &target, WithDeps, tmpdir.path())?;
     if target == host
         // Skip native test execution during bootstrap as the sysroot is not quite right there.
         && env::var("RUSTC_STAGE").ok().is_none_or(|s| s != "0")
     {
         ui(Mode::Pass { native: true }, "tests/pass", &target, WithoutDeps, tmpdir.path())?;
+        ui(Mode::Pass { native: true }, "tests/pass/kmiri", &target, WithoutDeps, tmpdir.path())?;
         ui(Mode::Pass { native: true }, "tests/pass-dep", &target, WithDeps, tmpdir.path())?;
+        ui(Mode::Pass { native: true }, "tests/pass-dep/kmiri", &target, WithDeps, tmpdir.path())?;
     }
     ui(Mode::Panic, "tests/panic", &target, WithDeps, tmpdir.path())?;
     ui(Mode::Fail, "tests/fail", &target, WithoutDeps, tmpdir.path())?;
+    ui(Mode::Fail, "tests/fail/kmiri", &target, WithoutDeps, tmpdir.path())?;
     ui(Mode::Fail, "tests/fail-dep", &target, WithDeps, tmpdir.path())?;
     if cfg!(all(unix, feature = "native-lib")) && target == host {
         ui(
