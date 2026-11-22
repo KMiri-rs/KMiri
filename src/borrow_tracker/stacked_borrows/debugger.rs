@@ -234,7 +234,7 @@ impl DebuggerSpan {
         highlighted_span: Span,
         ecx: &MiriInterpCx<'_>,
     ) -> Arc<Self> {
-        #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+        #[derive(Debug, Hash, PartialEq, Eq)]
         struct Key {
             body_span: Span,
             highlighted_span: Span,

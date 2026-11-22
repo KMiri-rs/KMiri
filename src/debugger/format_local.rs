@@ -16,8 +16,8 @@ pub fn format_local<'tcx>(
     frame: &Frame<'tcx, Provenance, FrameExtra<'tcx>>,
     local: mir::Local,
 ) -> (String, LocalKind) {
-    let state = &frame.locals[local];
-    if state.as_mplace_or_imm().is_none() {
+    let state = &frame.locals()[local];
+    if state.as_mplace_or_imm_ghost().is_none() {
         return ("-".to_owned(), LocalKind::Dead);
     }
 
@@ -38,7 +38,7 @@ fn local_to_op<'tcx>(
 ) -> Option<OpTy<'tcx>> {
     let ty = frame.body().local_decls[local].ty;
     let layout = ecx.layout_of(ty).ok()?;
-    match frame.locals[local].as_mplace_or_imm() {
+    match frame.locals()[local].as_mplace_or_imm_ghost() {
         None => None,
         Some(Either::Right(imm)) => Some(ImmTy::from_immediate(imm, layout).into()),
         Some(Either::Left((ptr, meta))) =>

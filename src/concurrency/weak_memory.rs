@@ -62,7 +62,7 @@
 //! can only happen after all previous accesses on the same locations. This implementation is adapted to allow these operations.
 //! A mixed atomicity read that races with writes, or a write that races with reads or writes will still cause UBs to be thrown.
 //! Mixed size atomic accesses must not race with any other atomic access, whether read or write, or a UB will be thrown.
-//! You can refer to test cases in weak_memory/extra_cpp.rs and weak_memory/extra_cpp_unsafe.rs for examples of these operations.
+//! You can refer to test cases in tests/pass/0weak_memory/extra_cpp.rs for examples of these operations.
 
 // Our and the author's own implementation (tsan11) of the paper have some deviations from the provided operational semantics in §5.3:
 // 1. In the operational semantics, loads acquire the vector clock of the atomic location
@@ -218,7 +218,8 @@ impl StoreBufferAlloc {
             // we can't return anything outdated.
             return interp_ok(None);
         };
-        let store_buffer = Ref::map(self.store_buffers.borrow(), |buffer| &buffer[pos]);
+        let store_buffer =
+            Ref::map(self.store_buffers.borrow(), |buffer| buffer.get_pos(pos).unwrap());
         interp_ok(Some(store_buffer))
     }
 
@@ -255,7 +256,7 @@ impl StoreBufferAlloc {
                 pos_range.start
             }
         };
-        interp_ok(&mut buffers[pos])
+        interp_ok(buffers.get_mut_pos(pos).unwrap())
     }
 }
 
@@ -492,6 +493,8 @@ impl StoreElement {
 
 impl<'tcx> EvalContextExt<'tcx> for crate::MiriInterpCx<'tcx> {}
 pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
+    /// Update the store buffer after an RMW.
+    /// Does nothing if we are currently not detecting races (e.g. single-threaded mode).
     fn buffered_atomic_rmw(
         &mut self,
         new_val: Scalar,
@@ -499,8 +502,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         atomic: AtomicRwOrd,
         init: Scalar,
     ) -> InterpResult<'tcx> {
-        let this = self.eval_context_mut();
-        let (alloc_id, base_offset, ..) = this.ptr_get_alloc_id(place.ptr(), 0)?;
+        let ecx = self.eval_context_mut();
+        let (alloc_id, base_offset, ..) = ecx.ptr_get_alloc_id(place.ptr(), 0)?;
         if let (
             crate::AllocExtra {
                 data_race: AllocDataRaceHandler::Vclocks(data_race_clocks, Some(alloc_buffers)),
@@ -509,7 +512,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             crate::MiriMachine {
                 data_race: GlobalDataRaceHandler::Vclocks(global), threads, ..
             },
-        ) = this.get_alloc_extra_mut(alloc_id)?
+        ) = ecx.get_alloc_extra_mut(alloc_id)?
+            && global.race_detecting()
         {
             if atomic == AtomicRwOrd::SeqCst {
                 global.sc_read(threads);
@@ -531,6 +535,10 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         interp_ok(())
     }
 
+    /// Perform a store buffer load. Returning `None` indicates a read of uninitialized memory.
+    /// Does nothing if we are currently not detecting races (e.g. single-threaded mode).
+    ///
+    /// `latest_in_mo` must be the most recent value according to the mo relation.
     /// The argument to `validate` is the synchronization clock of the memory that is being read,
     /// if we are reading from a store buffer element.
     fn buffered_atomic_read(
@@ -540,17 +548,19 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         latest_in_mo: Scalar,
         validate: impl FnOnce(Option<&VClock>) -> InterpResult<'tcx>,
     ) -> InterpResult<'tcx, Option<Scalar>> {
-        let this = self.eval_context_ref();
+        let ecx = self.eval_context_ref();
         'fallback: {
-            if let Some(global) = this.machine.data_race.as_vclocks_ref() {
-                let (alloc_id, base_offset, ..) = this.ptr_get_alloc_id(place.ptr(), 0)?;
+            if let Some(global) = ecx.machine.data_race.as_vclocks_ref()
+                && global.race_detecting()
+            {
+                let (alloc_id, base_offset, ..) = ecx.ptr_get_alloc_id(place.ptr(), 0)?;
                 if let Some(alloc_buffers) =
-                    this.get_alloc_extra(alloc_id)?.data_race.as_weak_memory_ref()
+                    ecx.get_alloc_extra(alloc_id)?.data_race.as_weak_memory_ref()
                 {
                     if atomic == AtomicReadOrd::SeqCst {
-                        global.sc_read(&this.machine.threads);
+                        global.sc_read(&ecx.machine.threads);
                     }
-                    let mut rng = this.machine.rng.borrow_mut();
+                    let mut rng = ecx.machine.rng.borrow_mut();
                     let Some(buffer) = alloc_buffers
                         .get_store_buffer(alloc_range(base_offset, place.layout.size))?
                     else {
@@ -559,13 +569,13 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     };
                     let (loaded, recency) = buffer.buffered_read(
                         global,
-                        &this.machine.threads,
+                        &ecx.machine.threads,
                         atomic == AtomicReadOrd::SeqCst,
                         &mut *rng,
                         validate,
                     )?;
                     if global.track_outdated_loads && recency == LoadRecency::Outdated {
-                        this.emit_diagnostic(NonHaltingDiagnostic::WeakMemoryOutdatedLoad {
+                        ecx.emit_diagnostic(NonHaltingDiagnostic::WeakMemoryOutdatedLoad {
                             ptr: place.ptr(),
                         });
                     }
@@ -582,6 +592,7 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
 
     /// Add the given write to the store buffer. (Does not change machine memory.)
     /// Must only be called after we determined that there is no data race or mixed-size race.
+    /// Does nothing if we are currently not detecting races (e.g. single-threaded mode).
     ///
     /// `init` says with which value to initialize the store buffer in case there wasn't a store
     /// buffer for this memory range before. `None` means the memory does not contain a valid
@@ -595,8 +606,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         atomic: AtomicWriteOrd,
         init: Option<Scalar>,
     ) -> InterpResult<'tcx> {
-        let this = self.eval_context_mut();
-        let (alloc_id, base_offset, ..) = this.ptr_get_alloc_id(dest.ptr(), 0)?;
+        let ecx = self.eval_context_mut();
+        let (alloc_id, base_offset, ..) = ecx.ptr_get_alloc_id(dest.ptr(), 0)?;
         if let (
             crate::AllocExtra {
                 data_race: AllocDataRaceHandler::Vclocks(data_race_clocks, Some(alloc_buffers)),
@@ -605,7 +616,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             crate::MiriMachine {
                 data_race: GlobalDataRaceHandler::Vclocks(global), threads, ..
             },
-        ) = this.get_alloc_extra_mut(alloc_id)?
+        ) = ecx.get_alloc_extra_mut(alloc_id)?
+            && global.race_detecting()
         {
             if atomic == AtomicWriteOrd::SeqCst {
                 global.sc_write(threads);
@@ -637,16 +649,16 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         place: &MPlaceTy<'tcx>,
         atomic: AtomicReadOrd,
     ) -> InterpResult<'tcx> {
-        let this = self.eval_context_ref();
+        let ecx = self.eval_context_ref();
 
-        if let Some(global) = this.machine.data_race.as_vclocks_ref() {
+        if let Some(global) = ecx.machine.data_race.as_vclocks_ref() {
             if atomic == AtomicReadOrd::SeqCst {
-                global.sc_read(&this.machine.threads);
+                global.sc_read(&ecx.machine.threads);
             }
             let size = place.layout.size;
-            let (alloc_id, base_offset, ..) = this.ptr_get_alloc_id(place.ptr(), 0)?;
+            let (alloc_id, base_offset, ..) = ecx.ptr_get_alloc_id(place.ptr(), 0)?;
             if let Some(alloc_buffers) =
-                this.get_alloc_extra(alloc_id)?.data_race.as_weak_memory_ref()
+                ecx.get_alloc_extra(alloc_id)?.data_race.as_weak_memory_ref()
             {
                 let Some(buffer) =
                     alloc_buffers.get_store_buffer(alloc_range(base_offset, size))?
@@ -656,7 +668,7 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 };
                 buffer.read_from_last_store(
                     global,
-                    &this.machine.threads,
+                    &ecx.machine.threads,
                     atomic == AtomicReadOrd::SeqCst,
                 );
             }

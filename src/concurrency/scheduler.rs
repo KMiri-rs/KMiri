@@ -2,6 +2,8 @@
 //! the current thread blocks/yields. It also manages timeouts and runs an async event loop
 //! to deal with host I/O. In GenMC mode, it handles delegating schedule control to GenMC.
 
+use std::cell::RefCell;
+use std::fmt;
 use std::sync::atomic::Ordering;
 use std::task::Poll;
 use std::time::Duration;
@@ -14,7 +16,6 @@ use rustc_middle::mir;
 use rustc_span::DUMMY_SP;
 
 use crate::mirch::PageState;
-use crate::shims::readiness::DelayedReadinessUpdates;
 use crate::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -28,19 +29,51 @@ pub enum SchedulingAction {
     SleepAndWaitForIo(Option<Duration>),
 }
 
+/// When we need to perform an operation but don't have an `ecx` around to run it immediately, we
+/// can register a callback here and it will be invoked on the next scheduler call.
+#[derive(Default)]
+pub struct DelayedCallbacks {
+    callbacks: RefCell<Vec<DelayedCallback>>,
+}
+
+pub type DelayedCallback = Box<dyn for<'tcx> FnOnce(&mut MiriInterpCx<'tcx>) -> InterpResult<'tcx>>;
+
+impl fmt::Debug for DelayedCallbacks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DelayedCallbacks").field("callbacks", &"_").finish()
+    }
+}
+
+impl DelayedCallbacks {
+    /// Register a callback to be invoked the next time the current thread yields/blocks.
+    pub fn add(&self, callback: DelayedCallback) {
+        self.callbacks.borrow_mut().push(callback);
+    }
+
+    fn process<'tcx>(ecx: &mut MiriInterpCx<'tcx>) -> InterpResult<'tcx> {
+        loop {
+            // Avoid keeping the RefCell open over the callback.
+            let Some(callback) = ecx.machine.delayed_callbacks.callbacks.borrow_mut().pop() else {
+                return interp_ok(());
+            };
+            (callback)(ecx)?;
+        }
+    }
+}
+
 impl<'tcx> EvalContextPrivExt<'tcx> for MiriInterpCx<'tcx> {}
 trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
     #[inline]
     fn run_on_stack_empty(&mut self) -> InterpResult<'tcx, Poll<()>> {
-        let this = self.eval_context_mut();
-        let active_thread = this.active_thread_mut();
-        active_thread.origin_span = DUMMY_SP; // reset, the old value no longer applied
+        let ecx = self.eval_context_mut();
+        let active_thread = ecx.active_thread_mut();
+        active_thread.origin_span = DUMMY_SP; // reset, the old value no longer applies
         let mut callback = active_thread
             .on_stack_empty
             .take()
             .expect("`on_stack_empty` not set up, or already running");
-        let res = callback(this)?;
-        this.active_thread_mut().on_stack_empty = Some(callback);
+        let res = callback(ecx)?;
+        ecx.active_thread_mut().on_stack_empty = Some(callback);
         interp_ok(res)
     }
 
@@ -53,39 +86,39 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
     ///
     /// If GenMC mode is active, the scheduling is instead handled by GenMC.
     fn schedule(&mut self) -> InterpResult<'tcx, SchedulingAction> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
 
         // A simulated IRQ runs synchronously on the interrupted thread and CPU, so
         // no other context of this CPU runs until its handler returns. Other CPUs
         // keep running meanwhile: a yield in the handler (such as a spin-loop hint)
         // lets another CPU run, and random CPU switches apply.
-        let cpu = this.machine.threads.active_cpu;
-        if this.machine.irq_cpus[cpu].active.is_some() {
-            if std::mem::take(&mut this.machine.threads.yield_active_thread) {
-                this.yield_to_other_cpu();
+        let cpu = ecx.machine.threads.active_cpu;
+        if ecx.machine.irq_cpus[cpu].active.is_some() {
+            if std::mem::take(&mut ecx.machine.threads.yield_active_thread) {
+                ecx.yield_to_other_cpu();
             }
-            this.machine.threads.apply_cpu_switch();
+            ecx.machine.threads.apply_cpu_switch();
             return interp_ok(SchedulingAction::ExecuteStep);
         }
 
         // In GenMC mode, we let GenMC do the scheduling.
-        if this.machine.data_race.as_genmc_ref().is_some() {
+        if ecx.machine.data_race.as_genmc_ref().is_some() {
             loop {
-                let genmc_ctx = this.machine.data_race.as_genmc_ref().unwrap();
-                let Some(next_thread_id) = genmc_ctx.schedule_thread(this)? else {
+                let genmc_ctx = ecx.machine.data_race.as_genmc_ref().unwrap();
+                let Some(next_thread_id) = genmc_ctx.schedule_thread(ecx)? else {
                     return interp_ok(SchedulingAction::ExecuteStep);
                 };
                 // If a thread is blocked on GenMC, we have to implicitly unblock it when it gets scheduled again.
-                if this.machine.threads.thread_ref(next_thread_id).is_blocked_on(BlockReason::Genmc)
+                if ecx.machine.threads.thread_ref(next_thread_id).is_blocked_on(BlockReason::Genmc)
                 {
                     info!(
                         "GenMC: scheduling blocked thread {next_thread_id:?}, so we unblock it now."
                     );
-                    this.unblock_thread(next_thread_id, BlockReason::Genmc)?;
+                    ecx.unblock_thread(next_thread_id, BlockReason::Genmc)?;
                 }
                 // The thread we just unblocked may have been blocked again during the unblocking callback.
                 // In that case, we need to ask for a different thread to run next.
-                let thread_manager = &mut this.machine.threads;
+                let thread_manager = &mut ecx.machine.threads;
                 if thread_manager.thread_ref(next_thread_id).is_enabled() {
                     // Set the new active thread.
                     thread_manager.set_active_thread(next_thread_id);
@@ -95,7 +128,7 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
         }
 
         // We are not in GenMC mode, so we control the scheduling.
-        let thread_manager = &mut this.machine.threads;
+        let thread_manager = &mut ecx.machine.threads;
 
         // kmiri: thread and cpu switch
         if let Some(res) = thread_manager.schedule_switch_thread_and_cpu() {
@@ -105,16 +138,16 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
         // kmiri: kernel contexts are resumed only by the kernel's own switches, never
         // picked by the scheduler below. A yield of a CPU context (a spin-loop hint or
         // a preemption point) lets another CPU run instead.
-        if this.machine.threads.yield_active_thread
-            && !this.machine.kernel_threads.is_empty()
-            && this.machine.threads.active_thread_ref().is_enabled()
+        if ecx.machine.threads.yield_active_thread
+            && !ecx.machine.kernel_threads.is_empty()
+            && ecx.machine.threads.active_thread_ref().is_enabled()
         {
-            this.machine.threads.yield_active_thread = false;
-            this.yield_to_other_cpu();
-            this.machine.threads.apply_cpu_switch();
+            ecx.machine.threads.yield_active_thread = false;
+            ecx.yield_to_other_cpu();
+            ecx.machine.threads.apply_cpu_switch();
             return interp_ok(SchedulingAction::ExecuteStep);
         }
-        let thread_manager = &mut this.machine.threads;
+        let thread_manager = &mut ecx.machine.threads;
 
         // Check if we can just keep running the current thread.
         if thread_manager.active_thread_ref().is_enabled() && !thread_manager.yield_active_thread {
@@ -125,12 +158,10 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
         // The active thread yielded or got terminated. Let's see if there are any I/O events
         // or timeouts to take care of.
 
-        // There may be delayed readiness updates we have to process. We only care about this
-        // if it may unblock other threads, or if someone calls `epoll_wait`, and for the latter
-        // case there is another call in `ReadinessWatcher::get_ready_interests`.
-        DelayedReadinessUpdates::process(this)?;
+        // There may be delayed callbacks we have to process, which may unblock more threads.
+        DelayedCallbacks::process(ecx)?;
 
-        if this.machine.communicate() {
+        if ecx.machine.communicate() {
             // When isolation is disabled we need to check for events for threads
             // which are blocked on host I/O. Unlike the `poll_and_unblock` before
             // any foreign item, the call here is needed to ensure that threads which
@@ -140,7 +171,7 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
             // which received events are available for scheduling afterwards.
 
             // Perform a non-blocking poll for newly available I/O events from the OS.
-            this.poll_and_unblock(Some(Duration::ZERO))?;
+            ecx.poll_and_unblock(Some(Duration::ZERO))?;
         }
 
         // We also check timeouts before running any other thread, to ensure that timeouts
@@ -148,10 +179,10 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
         // `pthread_cond_timedwait`, "an error is returned if [...] the absolute time specified by
         // abstime has already been passed at the time of the call".
         // <https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_cond_timedwait.html>
-        let potential_sleep_time = this.unblock_expired_deadlines()?;
+        let potential_sleep_time = ecx.unblock_expired_deadlines()?;
 
-        let thread_manager = &mut this.machine.threads;
-        let rng = this.machine.rng.get_mut();
+        let thread_manager = &mut ecx.machine.threads;
+        let rng = ecx.machine.rng.get_mut();
 
         // No callbacks immediately scheduled, pick a regular thread to execute.
         // The active thread blocked or yielded. So we go search for another enabled thread.
@@ -186,14 +217,14 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
         }
 
         // We have not found a thread to execute.
-        if this.machine.threads.all_threads().all(|(_id, thread)| thread.is_terminated()) {
+        if ecx.machine.threads.all_threads().all(|(_id, thread)| thread.is_terminated()) {
             unreachable!("all threads terminated without the main thread terminating?!");
         } else if let Some(sleep_time) = potential_sleep_time {
             // All threads are currently blocked, but we have unexecuted
             // timeout_callbacks, which may unblock some of the threads. Hence,
             // sleep until the first callback.
             interp_ok(SchedulingAction::SleepAndWaitForIo(Some(sleep_time)))
-        } else if this.any_thread_blocked_on_host() {
+        } else if ecx.any_thread_blocked_on_host() {
             // At least one thread doesn't have a timeout set, and is blocked on host I/O or is waiting on an
             // epoll instance which contains a host source interest. Hence, we sleep indefinitely in the
             // hope that eventually an I/O event happens.
@@ -208,74 +239,74 @@ impl<'tcx> EvalContextExt<'tcx> for crate::MiriInterpCx<'tcx> {}
 pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     /// Public because this is used by Priroda.
     fn step_current_thread(&mut self) -> InterpResult<'tcx> {
-        let this = self.eval_context_mut();
-        let basic_blocks_before = this.machine.basic_block_count;
-        let cpu = this.machine.threads.active_cpu;
+        let ecx = self.eval_context_mut();
+        let basic_blocks_before = ecx.machine.basic_block_count;
+        let cpu = ecx.machine.threads.active_cpu;
 
-        if !this.step()? {
-            // See if this thread can do something else.
-            match this.run_on_stack_empty()? {
+        if !ecx.step()? {
+            // The stack is empty. See if this thread can do something else.
+            match ecx.run_on_stack_empty()? {
                 Poll::Pending => {} // keep going
                 Poll::Ready(()) => {
-                    this.terminate_active_thread(TlsAllocAction::Deallocate)?;
+                    ecx.terminate_active_thread(/* for_exit */ false)?;
                 }
             }
         }
 
-        let blocks_executed = this.machine.basic_block_count - basic_blocks_before;
-        let current_stack_depth = this.active_thread_stack().len();
+        let blocks_executed = ecx.machine.basic_block_count - basic_blocks_before;
+        let current_stack_depth = ecx.active_thread_stack().len();
         if let Some((event_id, vector, source, was_enabled)) =
-            this.machine.finish_irq_if_returned(cpu, current_stack_depth)
+            ecx.machine.finish_irq_if_returned(cpu, current_stack_depth)
         {
-            if this.machine.irq_config.trace() {
+            if ecx.machine.irq_config.trace() {
                 eprintln!(
                     "KMiri IRQ: event={event_id} cpu={cpu} action=returned vector={vector} source={source:?} block_count={} IF={}",
-                    this.machine.basic_block_count, this.machine.irq_cpus[cpu].enabled
+                    ecx.machine.basic_block_count, ecx.machine.irq_cpus[cpu].enabled
                 );
             }
-            debug_assert_eq!(this.machine.irq_cpus[cpu].enabled, was_enabled);
+            debug_assert_eq!(ecx.machine.irq_cpus[cpu].enabled, was_enabled);
         }
 
         // `before_terminator` queues timer events before the terminator executes.
         // Dispatch only after `step` completed, so the interrupted MIR frame is at
         // a stable block boundary and the handler returns to its successor block.
-        let top_frame = this.active_thread_stack().last();
+        let top_frame = ecx.active_thread_stack().last();
         if blocks_executed != 0
-            && this.machine.irq_config.enabled()
-            && this.machine.irq_cpus[cpu].active.is_none()
-            && this.machine.irq_cpus[cpu].enabled
-            && !this.machine.irq_cpus[cpu].pending.is_empty()
+            && ecx.machine.irq_config.enabled()
+            && ecx.machine.irq_cpus[cpu].active.is_none()
+            && ecx.machine.irq_cpus[cpu].enabled
+            && !ecx.machine.irq_cpus[cpu].pending.is_empty()
             && let Some(frame) = top_frame
             && let Some(loc) = frame.current_loc().left()
         {
-            let pending = this.machine.irq_cpus[cpu].pending.pop_front().unwrap();
-            let interrupted_depth = this.active_thread_stack().len();
+            let pending = ecx.machine.irq_cpus[cpu].pending.pop_front().unwrap();
+            let interrupted_depth = ecx.active_thread_stack().len();
             let event_id = pending.event_id;
             let vector = pending.vector;
             let source = pending.source;
-            let entry = this.machine.irq_entry.unwrap();
+            let entry = ecx.machine.irq_entry.unwrap();
             let return_block = loc.block;
-            this.machine.irq_cpus[cpu].active = Some(crate::machine::ActiveIrq {
+            ecx.machine.irq_cpus[cpu].active = Some(crate::machine::ActiveIrq {
                 event_id,
                 vector,
                 source,
                 stack_depth: interrupted_depth,
                 was_enabled: true,
             });
-            this.machine.irq_cpus[cpu].enabled = false;
-            if this.machine.irq_config.trace() {
+            ecx.machine.irq_cpus[cpu].enabled = false;
+            if ecx.machine.irq_config.trace() {
                 eprintln!(
                     "KMiri IRQ: event={event_id} cpu={cpu} thread={:?} action=delivered vector={vector} source={source:?} global_block_count={} return_block={} pending={} IF=0",
-                    this.machine.threads.active_thread(),
-                    this.machine.basic_block_count,
+                    ecx.machine.threads.active_thread(),
+                    ecx.machine.basic_block_count,
                     return_block.index(),
-                    this.machine.irq_cpus[cpu].pending.len(),
+                    ecx.machine.irq_cpus[cpu].pending.len(),
                 );
             }
-            this.call_function(
+            ecx.call_function(
                 entry,
                 ExternAbi::Rust,
-                &[ImmTy::from_uint(vector, this.machine.layouts.u8)],
+                &[ImmTy::from_uint(vector, ecx.machine.layouts.u8)],
                 None,
                 ReturnContinuation::Goto {
                     ret: Some(return_block),
@@ -290,42 +321,42 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     /// Run the core interpreter loop. Returns only when an interrupt occurs (an error or program
     /// termination).
     fn run_threads(&mut self) -> InterpResult<'tcx, !> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
         loop {
             if CTRL_C_RECEIVED.load(Ordering::Relaxed) {
-                this.machine.handle_abnormal_termination();
+                ecx.machine.handle_abnormal_termination();
                 throw_machine_stop!(TerminationInfo::Interrupted);
             }
-            match this.schedule()? {
+            match ecx.schedule()? {
                 SchedulingAction::ExecuteStep => {
-                    if let Some(paddr) = this.machine.pt_checker {
+                    if let Some(paddr) = ecx.machine.pt_checker {
                         let page_start_paddr = paddr & !(mirch::page_size() - 1);
                         if let PageState::Typed { .. } =
                             mirch::physical_mem().page_states[page_start_paddr / mirch::page_size()]
                         {
-                            let _global_states = this.machine.alloc_addresses.borrow();
+                            let _global_states = ecx.machine.alloc_addresses.borrow();
                             //..todo!()
                         }
-                        this.machine.pt_checker = None;
+                        ecx.machine.pt_checker = None;
                     }
 
-                    this.step_current_thread()?;
-                    if let Some(handle) = &this.machine.debugger {
-                        let stack = this.active_thread_stack();
+                    ecx.step_current_thread()?;
+                    if let Some(handle) = &ecx.machine.debugger {
+                        let stack = ecx.active_thread_stack();
                         if !stack.is_empty() {
-                            handle.send(this);
+                            handle.send(ecx);
 
-                            match handle.wait_for_command(this) {
+                            match handle.wait_for_command(ecx) {
                                 debugger::Quit::No => (),
                                 debugger::Quit::Yes => {
-                                    this.machine.handle_abnormal_termination();
+                                    ecx.machine.handle_abnormal_termination();
                                     throw_machine_stop!(TerminationInfo::Interrupted)
                                 }
                                 debugger::Quit::YesWithErr(err) => {
                                     use std::io::Write;
                                     let file = std::fs::File::create("miri-debugger.log").unwrap();
                                     writeln!(&file, "Debugger exited with error:\n{err}").unwrap();
-                                    this.machine.handle_abnormal_termination();
+                                    ecx.machine.handle_abnormal_termination();
                                     throw_machine_stop!(TerminationInfo::Interrupted)
                                 }
                             }
@@ -333,17 +364,17 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     }
                 }
                 SchedulingAction::SleepAndWaitForIo(duration) => {
-                    if this.machine.communicate() {
+                    if ecx.machine.communicate() {
                         // When we're running with isolation disabled, instead of
                         // strictly sleeping the duration we allow waking up
                         // early for I/O events from the OS.
 
-                        this.poll_and_unblock(duration)?;
+                        ecx.poll_and_unblock(duration)?;
                     } else {
                         let duration = duration.expect(
                             "Infinite sleep should not be triggered when isolation is enabled",
                         );
-                        this.machine.monotonic_clock.sleep(duration);
+                        ecx.machine.monotonic_clock.sleep(duration);
                     }
                 }
             }

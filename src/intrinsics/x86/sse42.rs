@@ -8,13 +8,13 @@ use crate::intrinsics::math::compute_crc32;
 use crate::*;
 
 /// A bitmask constant for scrutinizing the immediate byte provided
-/// to the string comparison intrinsics. It distinuishes between
+/// to the string comparison intrinsics. It distinguishes between
 /// 16-bit integers and 8-bit integers. See [`compare_strings`]
 /// for more details about the immediate byte.
 const USE_WORDS: u8 = 1;
 
 /// A bitmask constant for scrutinizing the immediate byte provided
-/// to the string comparison intrinsics. It distinuishes between
+/// to the string comparison intrinsics. It distinguishes between
 /// signed integers and unsigned integers. See [`compare_strings`]
 /// for more details about the immediate byte.
 const USE_SIGNED: u8 = 2;
@@ -55,8 +55,8 @@ const USE_SIGNED: u8 = 2;
 ///     ||
 ///     ||- Output selection. This bit has two meanings depending on the instruction.
 ///     |   If the instruction is generating a mask, it distinguishes between a bit mask
-///     |   and a byte mask. Otherwise it distinguishes between the most significand bit
-///     |   and the least significand bit when generating an index.
+///     |   and a byte mask. Otherwise it distinguishes between the most significant bit
+///     |   and the least significant bit when generating an index.
 ///     |
 ///     |- This bit is ignored. It is expected that this bit is set to zero, but it is
 ///        not a requirement.
@@ -68,7 +68,12 @@ const USE_SIGNED: u8 = 2;
 /// fulfills the test as defined inside the immediate byte.
 /// The mask may be negated if negation flags inside the immediate byte are set.
 ///
-/// For more information, see the Intel Software Developer's Manual, Vol. 2b, Chapter 4.1.
+/// For more information, see the Intel Software Developer's Manual, Vol. 2b, Chapter 4.1,
+/// as well as the online SDM reference for [PCMPxSTRx_Decode_Immediate], [PCMPxSTRx_Compare], and [PCMPxSTRx_Update_Flags].
+///
+/// [PCMPxSTRx_Decode_Immediate]: https://intel.github.io/SDM/definition/PCMPxSTRx_Decode_Immediate.html
+/// [PCMPxSTRx_Compare]: https://intel.github.io/SDM/definition/PCMPxSTRx_Compare.html
+/// [PCMPxSTRx_Update_Flags]: https://intel.github.io/SDM/definition/PCMPxSTRx_Update_Flags.html
 #[expect(clippy::arithmetic_side_effects)]
 fn compare_strings<'tcx>(
     ecx: &mut MiriInterpCx<'tcx>,
@@ -148,16 +153,21 @@ fn compare_strings<'tcx>(
                 result = (1 << default_len) - 1;
             } else if len1 <= len2 {
                 for i in 0..len2 {
-                    if len1 > len2 - i {
-                        break;
-                    }
-
-                    result |= 1 << i;
+                    // By default, assume that there is a match.
+                    let mut has_match = true;
 
                     for j in 0..len1 {
                         let k = i + j;
 
                         if k >= default_len {
+                            // The string ends before the match is completed, but the end
+                            // is defined by the register size, not the string.
+                            // This situation counts as a match.
+                            break;
+                        } else if k >= len2 {
+                            // The string ends before the match is completed.
+                            // This means that there is no match.
+                            has_match = false;
                             break;
                         } else {
                             let ch1 = ecx.read_immediate(&ecx.project_index(str1, j)?)?;
@@ -165,10 +175,16 @@ fn compare_strings<'tcx>(
                             let ne = ecx.binary_op(mir::BinOp::Ne, &ch1, &ch2)?;
 
                             if ne.to_scalar().to_bool()? {
-                                result &= !(1 << i);
+                                // Two characters are not equal, so there can't be a match.
+                                has_match = false;
                                 break;
                             }
                         }
+                    }
+
+                    // Accumulate the match result inside the bit mask.
+                    if has_match {
+                        result |= 1 << i;
                     }
                 }
             }
@@ -178,7 +194,7 @@ fn compare_strings<'tcx>(
 
     // Polarity: Possibly perform a bitwise complement on the result.
     match (imm >> 4) & 3 {
-        3 => result ^= (1 << len1) - 1,
+        3 => result ^= (1 << len2) - 1,
         1 => result ^= (1 << default_len) - 1,
         _ => (),
     }
@@ -222,12 +238,14 @@ fn deconstruct_args<'tcx>(
     };
 
     if is_explicit {
-        let [str1, len1, str2, len2, imm] = ecx.check_shim_sig_unadjusted(link_name, args)?;
+        let [str1, len1, str2, len2, imm] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
         let imm = ecx.read_scalar(imm)?.to_u8()?;
 
         let default_len = default_len::<u32>(imm);
-        let len1 = u64::from(ecx.read_scalar(len1)?.to_u32()?.min(default_len));
-        let len2 = u64::from(ecx.read_scalar(len2)?.to_u32()?.min(default_len));
+        // According to https://intel.github.io/SDM/instruction/PCMPESTRM.html, the length argument
+        // is initially signed and turned into an unsigned integer by taking its absolute value.
+        let len1 = u64::from(ecx.read_scalar(len1)?.to_i32()?.unsigned_abs().min(default_len));
+        let len2 = u64::from(ecx.read_scalar(len2)?.to_i32()?.unsigned_abs().min(default_len));
 
         let array_layout = array_layout_fn(ecx, imm)?;
         let str1 = str1.transmute(array_layout, ecx)?;
@@ -235,7 +253,7 @@ fn deconstruct_args<'tcx>(
 
         interp_ok((str1, str2, Some((len1, len2)), imm))
     } else {
-        let [str1, str2, imm] = ecx.check_shim_sig_unadjusted(link_name, args)?;
+        let [str1, str2, imm] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
         let imm = ecx.read_scalar(imm)?.to_u8()?;
 
         let array_layout = array_layout_fn(ecx, imm)?;
@@ -280,8 +298,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         args: &[OpTy<'tcx>],
         dest: &MPlaceTy<'tcx>,
     ) -> InterpResult<'tcx, EmulateItemResult> {
-        let this = self.eval_context_mut();
-        this.expect_target_feature_for_intrinsic(link_name, "sse4.2")?;
+        let ecx = self.eval_context_mut();
+        ecx.expect_target_feature_for_intrinsic(link_name, "sse4.2")?;
         // Prefix should have already been checked.
         let unprefixed_name = link_name.as_str().strip_prefix("llvm.x86.sse42.").unwrap();
 
@@ -291,28 +309,28 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#ig_expand=1044,922
             "pcmpistrm128" | "pcmpestrm128" => {
                 let (str1, str2, len, imm) =
-                    deconstruct_args(unprefixed_name, this, link_name, args)?;
-                let mask = compare_strings(this, &str1, &str2, len, imm)?;
+                    deconstruct_args(unprefixed_name, ecx, link_name, args)?;
+                let mask = compare_strings(ecx, &str1, &str2, len, imm)?;
 
                 // The sixth bit inside the immediate byte distinguishes
                 // between a bit mask or a byte mask when generating a mask.
                 if imm & 0b100_0000 != 0 {
                     let (array_layout, size) = if imm & USE_WORDS != 0 {
-                        (this.layout_of(Ty::new_array(this.tcx.tcx, this.tcx.types.u16, 8))?, 2)
+                        (ecx.layout_of(Ty::new_array(ecx.tcx.tcx, ecx.tcx.types.u16, 8))?, 2)
                     } else {
-                        (this.layout_of(Ty::new_array(this.tcx.tcx, this.tcx.types.u8, 16))?, 1)
+                        (ecx.layout_of(Ty::new_array(ecx.tcx.tcx, ecx.tcx.types.u8, 16))?, 1)
                     };
                     let size = Size::from_bytes(size);
-                    let dest = dest.transmute(array_layout, this)?;
+                    let dest = dest.transmute(array_layout, ecx)?;
 
                     for i in 0..default_len::<u64>(imm) {
                         let result = helpers::bool_to_simd_element(mask & (1 << i) != 0, size);
-                        this.write_scalar(result, &this.project_index(&dest, i)?)?;
+                        ecx.write_scalar(result, &ecx.project_index(&dest, i)?)?;
                     }
                 } else {
-                    let layout = this.layout_of(this.tcx.types.i128)?;
-                    let dest = dest.transmute(layout, this)?;
-                    this.write_scalar(Scalar::from_i128(i128::from(mask)), &dest)?;
+                    let layout = ecx.layout_of(ecx.tcx.types.i128)?;
+                    let dest = dest.transmute(layout, ecx)?;
+                    ecx.write_scalar(Scalar::from_i128(i128::from(mask)), &dest)?;
                 }
             }
 
@@ -322,16 +340,17 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#ig_expand=919,1041
             "pcmpistria128" | "pcmpestria128" => {
                 let (str1, str2, len, imm) =
-                    deconstruct_args(unprefixed_name, this, link_name, args)?;
-                let result = if compare_strings(this, &str1, &str2, len, imm)? != 0 {
+                    deconstruct_args(unprefixed_name, ecx, link_name, args)?;
+                let result = if compare_strings(ecx, &str1, &str2, len, imm)? != 0 {
                     false
                 } else if let Some((_, len)) = len {
                     len >= default_len::<u64>(imm)
                 } else {
-                    implicit_len(this, &str1, imm)?.is_some()
+                    // Test if the second string has no null-terminator.
+                    implicit_len(ecx, &str2, imm)?.is_none()
                 };
 
-                this.write_scalar(Scalar::from_i32(i32::from(result)), dest)?;
+                ecx.write_scalar(Scalar::from_i32(i32::from(result)), dest)?;
             }
 
             // Used to implement the `_mm_cmpestri` and the `_mm_cmpistri` functions.
@@ -340,8 +359,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#ig_expand=921,1043
             "pcmpistri128" | "pcmpestri128" => {
                 let (str1, str2, len, imm) =
-                    deconstruct_args(unprefixed_name, this, link_name, args)?;
-                let mask = compare_strings(this, &str1, &str2, len, imm)?;
+                    deconstruct_args(unprefixed_name, ecx, link_name, args)?;
+                let mask = compare_strings(ecx, &str1, &str2, len, imm)?;
 
                 let len = default_len::<u32>(imm);
                 // The sixth bit inside the immediate byte distinguishes between the least
@@ -353,7 +372,7 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     // least significant bit
                     mask.trailing_zeros().min(len)
                 };
-                this.write_scalar(Scalar::from_i32(i32::try_from(result).unwrap()), dest)?;
+                ecx.write_scalar(Scalar::from_i32(i32::try_from(result).unwrap()), dest)?;
             }
 
             // Used to implement the `_mm_cmpestro` and the `_mm_cmpistro` functions.
@@ -362,9 +381,9 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#ig_expand=923,1045
             "pcmpistrio128" | "pcmpestrio128" => {
                 let (str1, str2, len, imm) =
-                    deconstruct_args(unprefixed_name, this, link_name, args)?;
-                let mask = compare_strings(this, &str1, &str2, len, imm)?;
-                this.write_scalar(Scalar::from_i32(mask & 1), dest)?;
+                    deconstruct_args(unprefixed_name, ecx, link_name, args)?;
+                let mask = compare_strings(ecx, &str1, &str2, len, imm)?;
+                ecx.write_scalar(Scalar::from_i32(mask & 1), dest)?;
             }
 
             // Used to implement the `_mm_cmpestrc` and the `_mm_cmpistrc` functions.
@@ -373,9 +392,9 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#ig_expand=920,1042
             "pcmpistric128" | "pcmpestric128" => {
                 let (str1, str2, len, imm) =
-                    deconstruct_args(unprefixed_name, this, link_name, args)?;
-                let mask = compare_strings(this, &str1, &str2, len, imm)?;
-                this.write_scalar(Scalar::from_i32(i32::from(mask != 0)), dest)?;
+                    deconstruct_args(unprefixed_name, ecx, link_name, args)?;
+                let mask = compare_strings(ecx, &str1, &str2, len, imm)?;
+                ecx.write_scalar(Scalar::from_i32(i32::from(mask != 0)), dest)?;
             }
 
             // Used to implement the `_mm_cmpistrz` and the `_mm_cmpistrs` functions.
@@ -384,19 +403,19 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // search for a null terminator (see `deconstruct_args` for more details).
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#ig_expand=924,925
             "pcmpistriz128" | "pcmpistris128" => {
-                let [str1, str2, imm] = this.check_shim_sig_unadjusted(link_name, args)?;
-                let imm = this.read_scalar(imm)?.to_u8()?;
+                let [str1, str2, imm] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
+                let imm = ecx.read_scalar(imm)?.to_u8()?;
 
                 let str = if unprefixed_name == "pcmpistris128" { str1 } else { str2 };
                 let array_layout = if imm & USE_WORDS != 0 {
-                    this.layout_of(Ty::new_array(this.tcx.tcx, this.tcx.types.u16, 8))?
+                    ecx.layout_of(Ty::new_array(ecx.tcx.tcx, ecx.tcx.types.u16, 8))?
                 } else {
-                    this.layout_of(Ty::new_array(this.tcx.tcx, this.tcx.types.u8, 16))?
+                    ecx.layout_of(Ty::new_array(ecx.tcx.tcx, ecx.tcx.types.u8, 16))?
                 };
-                let str = str.transmute(array_layout, this)?;
-                let result = implicit_len(this, &str, imm)?.is_some();
+                let str = str.transmute(array_layout, ecx)?;
+                let result = implicit_len(ecx, &str, imm)?.is_some();
 
-                this.write_scalar(Scalar::from_i32(i32::from(result)), dest)?;
+                ecx.write_scalar(Scalar::from_i32(i32::from(result)), dest)?;
             }
 
             // Used to implement the `_mm_cmpestrz` and the `_mm_cmpestrs` functions.
@@ -404,14 +423,13 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // than 16 for byte-sized operands or 8 for word-sized operands.
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#ig_expand=1046,1047
             "pcmpestriz128" | "pcmpestris128" => {
-                let [_, len1, _, len2, imm] = this.check_shim_sig_unadjusted(link_name, args)?;
+                let [_, len1, _, len2, imm] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
                 let len = if unprefixed_name == "pcmpestris128" { len1 } else { len2 };
-                let len = this.read_scalar(len)?.to_i32()?;
-                let imm = this.read_scalar(imm)?.to_u8()?;
-                this.write_scalar(
-                    Scalar::from_i32(i32::from(len < default_len::<i32>(imm))),
-                    dest,
-                )?;
+                // According to https://intel.github.io/SDM/instruction/PCMPESTRM.html, the length argument
+                // is initially signed and turned into an unsigned integer by taking its absolute value.
+                let len = ecx.read_scalar(len)?.to_i32()?.unsigned_abs();
+                let imm = ecx.read_scalar(imm)?.to_u8()?;
+                ecx.write_scalar(Scalar::from_i32(i32::from(len < default_len::<u32>(imm))), dest)?;
             }
 
             // Used to implement the `_mm_crc32_u{8, 16, 32, 64}` functions.
@@ -427,13 +445,13 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     _ => unreachable!(),
                 };
 
-                if bit_size == 64 && this.tcx.sess.target.arch != Arch::X86_64 {
+                if bit_size == 64 && ecx.tcx.sess.target.arch != Arch::X86_64 {
                     return interp_ok(EmulateItemResult::NotSupported);
                 }
 
-                let [left, right] = this.check_shim_sig_unadjusted(link_name, args)?;
-                let left = this.read_scalar(left)?;
-                let right = this.read_scalar(right)?;
+                let [left, right] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
+                let left = ecx.read_scalar(left)?;
+                let right = ecx.read_scalar(right)?;
 
                 let crc = if bit_size == 64 {
                     // The 64-bit version will only consider the lower 32 bits,
@@ -458,7 +476,7 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     Scalar::from_u32(result)
                 };
 
-                this.write_scalar(result, dest)?;
+                ecx.write_scalar(result, dest)?;
             }
             _ => return interp_ok(EmulateItemResult::NotSupported),
         }

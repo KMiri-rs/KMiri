@@ -79,7 +79,6 @@ const UNIX_IO_ERROR_TABLE: &[(&str, std::io::ErrorKind)] = {
         ("ENOENT", NotFound),
         ("ENOMEM", OutOfMemory),
         ("ENOSPC", StorageFull),
-        ("ENOSYS", Unsupported),
         ("EMLINK", TooManyLinks),
         ("ENAMETOOLONG", InvalidFilename),
         ("ENETDOWN", NetworkDown),
@@ -95,15 +94,17 @@ const UNIX_IO_ERROR_TABLE: &[(&str, std::io::ErrorKind)] = {
         ("ETXTBSY", ExecutableFileBusy),
         ("EXDEV", CrossesDevices),
         ("EINPROGRESS", InProgress),
+        ("EIO", InputOutputError),
         // The following have two valid options. We have both for the forwards mapping; only the
         // first one will be used for the backwards mapping.
         ("EPERM", PermissionDenied),
         ("EACCES", PermissionDenied),
         ("EWOULDBLOCK", WouldBlock),
         ("EAGAIN", WouldBlock),
-        #[cfg(not(bootstrap))]
+        ("ENOSYS", Unsupported),
+        ("EOPNOTSUPP", Unsupported),
+        ("ENOTSUP", Unsupported),
         ("EMFILE", TooManyOpenFiles),
-        #[cfg(not(bootstrap))]
         ("ENFILE", TooManyOpenFiles),
     ]
 };
@@ -201,8 +202,8 @@ const WINDOWS_IO_ERROR_TABLE: &[(&str, std::io::ErrorKind)] = {
     &[
         ("WSAEADDRINUSE", AddrInUse),
         ("WSAEADDRNOTAVAIL", AddrNotAvailable),
-        ("ERROR_ALREADY_EXISTS", AlreadyExists),
         ("ERROR_FILE_EXISTS", AlreadyExists),
+        ("ERROR_ALREADY_EXISTS", AlreadyExists),
         ("ERROR_NO_DATA", BrokenPipe),
         ("WSAECONNABORTED", ConnectionAborted),
         ("WSAECONNREFUSED", ConnectionRefused),
@@ -258,10 +259,10 @@ const WINDOWS_IO_ERROR_TABLE: &[(&str, std::io::ErrorKind)] = {
         ("ERROR_RUNLEVEL_SWITCH_TIMEOUT", TimedOut),
         ("ERROR_RUNLEVEL_SWITCH_AGENT_TIMEOUT", TimedOut),
         ("ERROR_TOO_MANY_LINKS", TooManyLinks),
-        #[cfg(not(bootstrap))]
-        ("ERROR_TOO_MANY_OPEN_FILES", TooManyOpenFiles),
         ("ERROR_CALL_NOT_IMPLEMENTED", Unsupported),
         ("WSAEWOULDBLOCK", WouldBlock),
+        ("ERROR_TOO_MANY_OPEN_FILES", TooManyOpenFiles),
+        ("ERROR_IO_DEVICE", InputOutputError),
     ]
 };
 
@@ -270,35 +271,35 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     /// Get last error variable as a place, lazily allocating thread-local storage for it if
     /// necessary.
     fn last_error_place(&mut self) -> InterpResult<'tcx, MPlaceTy<'tcx>> {
-        let this = self.eval_context_mut();
-        if let Some(errno_place) = this.active_thread_ref().last_error.as_ref() {
+        let ecx = self.eval_context_mut();
+        if let Some(errno_place) = ecx.active_thread_ref().last_error.as_ref() {
             interp_ok(errno_place.clone())
         } else {
             // Allocate new place, set initial value to 0.
-            let errno_layout = this.machine.layouts.u32;
-            let errno_place = this.allocate(errno_layout, MiriMemoryKind::Machine.into())?;
-            this.write_scalar(Scalar::from_u32(0), &errno_place)?;
-            this.active_thread_mut().last_error = Some(errno_place.clone());
+            let errno_layout = ecx.machine.layouts.u32;
+            let errno_place = ecx.allocate(errno_layout, MiriMemoryKind::Machine.into())?;
+            ecx.write_scalar(Scalar::from_u32(0), &errno_place)?;
+            ecx.active_thread_mut().last_error = Some(errno_place.clone());
             interp_ok(errno_place)
         }
     }
 
-    fn io_error_to_errnum(&mut self, err: impl Into<IoError>) -> InterpResult<'tcx, Scalar> {
-        let this = self.eval_context_mut();
+    fn io_error_to_errnum(&self, err: impl Into<IoError>) -> InterpResult<'tcx, Scalar> {
+        let ecx = self.eval_context_ref();
         interp_ok(match err.into() {
-            HostError(err) => this.host_error_to_errnum(err)?,
-            LibcError(name) => this.eval_libc(name),
-            WindowsError(name) => this.eval_windows("c", name),
+            HostError(err) => ecx.host_error_to_errnum(err)?,
+            LibcError(name) => ecx.eval_libc(name),
+            WindowsError(name) => ecx.eval_windows("c", name),
             Raw(val) => val,
         })
     }
 
     /// Sets the last error variable.
     fn set_last_error(&mut self, err: impl Into<IoError>) -> InterpResult<'tcx> {
-        let this = self.eval_context_mut();
-        let errno = this.io_error_to_errnum(err)?;
-        let errno_place = this.last_error_place()?;
-        this.write_scalar(errno, &errno_place)
+        let ecx = self.eval_context_mut();
+        let errno = ecx.io_error_to_errnum(err)?;
+        let errno_place = ecx.last_error_place()?;
+        ecx.write_scalar(errno, &errno_place)
     }
 
     /// Sets the last OS error and writes -1 to dest place.
@@ -307,10 +308,22 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         err: impl Into<IoError>,
         dest: &MPlaceTy<'tcx>,
     ) -> InterpResult<'tcx> {
-        let this = self.eval_context_mut();
-        this.set_last_error(err)?;
-        this.write_int(-1, dest)?;
+        let ecx = self.eval_context_mut();
+        ecx.set_last_error(err)?;
+        ecx.write_int(-1, dest)?;
         interp_ok(())
+    }
+
+    fn return_io_result_via_errno<T: Into<i128>, E: Into<IoError>>(
+        &mut self,
+        res: Result<T, E>,
+        dest: &MPlaceTy<'tcx>,
+    ) -> InterpResult<'tcx> {
+        let ecx = self.eval_context_mut();
+        match res {
+            Ok(ret) => ecx.write_int(ret, dest),
+            Err(err) => ecx.set_errno_and_return_neg1(err, dest),
+        }
     }
 
     /// Sets the last OS error and return `-1` as a `i32`-typed Scalar
@@ -318,8 +331,8 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         &mut self,
         err: impl Into<IoError>,
     ) -> InterpResult<'tcx, Scalar> {
-        let this = self.eval_context_mut();
-        this.set_last_error(err)?;
+        let ecx = self.eval_context_mut();
+        ecx.set_last_error(err)?;
         interp_ok(Scalar::from_i32(-1))
     }
 
@@ -328,35 +341,46 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         &mut self,
         err: impl Into<IoError>,
     ) -> InterpResult<'tcx, Scalar> {
-        let this = self.eval_context_mut();
-        this.set_last_error(err)?;
+        let ecx = self.eval_context_mut();
+        ecx.set_last_error(err)?;
         interp_ok(Scalar::from_i64(-1))
     }
 
     /// Gets the last error variable.
     fn get_last_error(&mut self) -> InterpResult<'tcx, Scalar> {
-        let this = self.eval_context_mut();
-        let errno_place = this.last_error_place()?;
-        this.read_scalar(&errno_place)
+        let ecx = self.eval_context_mut();
+        let errno_place = ecx.last_error_place()?;
+        ecx.read_scalar(&errno_place)
     }
 
     /// This function converts host errors to target errors. It tries to produce the most similar OS
     /// error from the `std::io::ErrorKind` as a platform-specific errnum.
     fn host_error_to_errnum(&self, err: std::io::Error) -> InterpResult<'tcx, Scalar> {
-        let this = self.eval_context_ref();
-        let target = &this.tcx.sess.target;
+        let ecx = self.eval_context_ref();
+        let target = &ecx.tcx.sess.target;
 
         if target.families.iter().any(|f| f == "unix") {
+            // If the host is also Unix, we can use the raw OS error and avoid a potentially lossy
+            // trip through `ErrorKind`.
+            #[cfg(unix)]
+            if let Some(host_errno) = err.raw_os_error() {
+                for &(name, errno) in UNIX_ERRNO_TABLE {
+                    if host_errno == errno {
+                        return interp_ok(ecx.eval_libc(name));
+                    }
+                }
+            }
+            // For other hosts or other constants, we fall back to translating via `ErrorKind`.
             for &(name, kind) in UNIX_IO_ERROR_TABLE {
                 if err.kind() == kind {
-                    return interp_ok(this.eval_libc(name));
+                    return interp_ok(ecx.eval_libc(name));
                 }
             }
             throw_unsup_format!("unsupported io error: {err}")
         } else if target.families.iter().any(|f| f == "windows") {
             for &(name, kind) in WINDOWS_IO_ERROR_TABLE {
                 if err.kind() == kind {
-                    return interp_ok(this.eval_windows("c", name));
+                    return interp_ok(ecx.eval_windows("c", name));
                 }
             }
             throw_unsup_format!("unsupported io error: {err}");
@@ -369,14 +393,15 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     }
 
     /// The inverse of `io_error_to_errnum`: it converts target errors to host errors.
+    /// This is used to render such errors as user-visible strings.
     /// This is done in a best-effort way.
     #[expect(clippy::needless_return)]
     fn try_errnum_to_io_error(
         &self,
         target_errnum: Scalar,
     ) -> InterpResult<'tcx, Option<io::Error>> {
-        let this = self.eval_context_ref();
-        let target = &this.tcx.sess.target;
+        let ecx = self.eval_context_ref();
+        let target = &ecx.tcx.sess.target;
         if target.families.iter().any(|f| f == "unix") {
             let target_errnum = target_errnum.to_i32()?;
             // If the host is also unix, we try to translate the errno directly.
@@ -384,13 +409,13 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // impl than what we get by going through `ErrorKind`.
             #[cfg(unix)]
             for &(name, errno) in UNIX_ERRNO_TABLE {
-                if target_errnum == this.eval_libc_i32(name) {
+                if target_errnum == ecx.eval_libc_i32(name) {
                     return interp_ok(Some(io::Error::from_raw_os_error(errno)));
                 }
             }
             // For other hosts or other constants, we fall back to translating via `ErrorKind`.
             for &(name, kind) in UNIX_IO_ERROR_TABLE {
-                if target_errnum == this.eval_libc_i32(name) {
+                if target_errnum == ecx.eval_libc_i32(name) {
                     return interp_ok(Some(kind.into()));
                 }
             }
@@ -398,7 +423,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         } else if target.families.iter().any(|f| f == "windows") {
             let target_errnum = target_errnum.to_u32()?;
             for &(name, kind) in WINDOWS_IO_ERROR_TABLE {
-                if target_errnum == this.eval_windows("c", name).to_u32()? {
+                if target_errnum == ecx.eval_windows("c", name).to_u32()? {
                     return interp_ok(Some(kind.into()));
                 }
             }

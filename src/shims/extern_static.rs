@@ -1,7 +1,7 @@
 //! Provides the `extern static` that this platform expects.
 
 use rustc_span::Symbol;
-use rustc_target::spec::Os;
+use rustc_target::spec::{Env, Os};
 
 use crate::*;
 
@@ -16,11 +16,11 @@ impl<'tcx> MiriMachine<'tcx> {
         ecx: &mut MiriInterpCx<'tcx>,
         name: &str,
         val: ImmTy<'tcx>,
-    ) -> InterpResult<'tcx> {
+    ) -> InterpResult<'tcx, Pointer> {
         let place = ecx.allocate(val.layout, MiriMemoryKind::ExternStatic.into())?;
         ecx.write_immediate(*val, &place)?;
         Self::add_extern_static(ecx, name, place.ptr());
-        interp_ok(())
+        interp_ok(place.ptr())
     }
 
     /// Make `ptr` available as a weak symbol with the given name.
@@ -30,7 +30,7 @@ impl<'tcx> MiriMachine<'tcx> {
         ptr: Pointer,
     ) -> InterpResult<'tcx> {
         // Allocate the extra indirection place and add it to the map.
-        let layout = ecx.machine.layouts.mut_raw_ptr;
+        let layout = ecx.machine.layouts.unit_ptr_mut;
         let place = ecx.allocate(layout, MiriMemoryKind::ExternStatic.into())?;
         ecx.write_scalar(Scalar::from_maybe_pointer(ptr, ecx), &place)?;
         let weak_ptr = place.ptr().into_pointer_or_addr().unwrap();
@@ -57,7 +57,8 @@ impl<'tcx> MiriMachine<'tcx> {
     fn link_rust_extern_statics(ecx: &mut MiriInterpCx<'tcx>) -> InterpResult<'tcx> {
         let tcx = ecx.tcx.tcx;
         let mut names: Vec<Symbol> = Vec::new();
-        for cnum in std::iter::once(rustc_hir::def_id::LOCAL_CRATE).chain(tcx.crates(()).iter().copied())
+        for cnum in
+            std::iter::once(rustc_hir::def_id::LOCAL_CRATE).chain(tcx.crates(()).iter().copied())
         {
             for module in tcx.foreign_modules(cnum).values() {
                 for &def_id in &module.foreign_items {
@@ -79,7 +80,7 @@ impl<'tcx> MiriMachine<'tcx> {
             if ecx.machine.extern_statics.contains_key(&link_name) {
                 continue;
             }
-            let Some(instance) = ecx.lookup_exported_symbol_instance(link_name)? else {
+            let Some(instance) = ecx.lookup_exported_symbol(link_name)? else {
                 continue;
             };
             if !matches!(tcx.def_kind(instance.def_id()), rustc_hir::def::DefKind::Static { .. })
@@ -93,7 +94,8 @@ impl<'tcx> MiriMachine<'tcx> {
             // "does not have a mir_for_ctfe". Refer to the static the same way an
             // ordinary `static` access does instead.
             let alloc_id = tcx.reserve_and_set_static_alloc(instance.def_id());
-            let ptr = ecx.global_root_pointer(rustc_middle::mir::interpret::Pointer::from(alloc_id))?;
+            let ptr =
+                ecx.global_root_pointer(rustc_middle::mir::interpret::Pointer::from(alloc_id))?;
             ecx.machine.extern_statics.insert(link_name, ptr);
         }
         interp_ok(())
@@ -113,7 +115,25 @@ impl<'tcx> MiriMachine<'tcx> {
 
         match &ecx.tcx.sess.target.os {
             Os::Linux => {
-                Self::weak_fn_symbols(ecx, &["getrandom", "gettid", "statx", "strlen"])?;
+                Self::weak_fn_symbols(
+                    ecx,
+                    &["copy_file_range", "getrandom", "gettid", "statx", "strlen"],
+                )?;
+                if ecx.is_dyn_sym("__futimens64") {
+                    Self::weak_fn_symbols(ecx, &["__futimens64"])?;
+                }
+                if ecx.tcx.sess.target.env == Env::Gnu {
+                    // FIXME: enabling this with genmc causes test failures because of how
+                    // std then uses pthread keys and genmc does not know about their state.
+                    if ecx.machine.data_race.as_genmc_ref().is_none() {
+                        Self::weak_fn_symbols(ecx, &["__cxa_thread_atexit_impl"])?;
+                    }
+                    // The __dso_handle symbol just marks a unique global address.
+                    let val = ImmTy::from_int(0, ecx.machine.layouts.u8);
+                    let ptr = Self::alloc_extern_static(ecx, "__dso_handle", val)?;
+                    // We also need a weak symbol for `__dso_handle`.
+                    Self::add_weak_symbol(ecx, "__dso_handle", ptr)?;
+                }
             }
             Os::Android => {
                 Self::weak_fn_symbols(
@@ -135,7 +155,7 @@ impl<'tcx> MiriMachine<'tcx> {
 
         // Also initialize `missing_weak_symbol`.
         let place = ecx.allocate(ecx.machine.layouts.usize, MiriMemoryKind::ExternStatic.into())?;
-        ecx.write_null(&place)?;
+        ecx.write_int(0, &place)?;
         ecx.machine.extern_static_weak_import_default =
             Some(place.ptr().into_pointer_or_addr().unwrap());
 

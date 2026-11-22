@@ -31,7 +31,7 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         args: &[OpTy<'tcx>],
         dest: &MPlaceTy<'tcx>,
     ) -> InterpResult<'tcx, EmulateItemResult> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
         // Prefix should have already been checked.
         let unprefixed_name = link_name.as_str().strip_prefix("llvm.x86.").unwrap();
         match unprefixed_name {
@@ -41,20 +41,20 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // https://www.intel.com/content/www/us/en/docs/cpp-compiler/developer-guide-reference/2021-8/addcarry-u32-addcarry-u64.html
             // https://www.intel.com/content/www/us/en/docs/cpp-compiler/developer-guide-reference/2021-8/subborrow-u32-subborrow-u64.html
             "addcarry.32" | "addcarry.64" | "subborrow.32" | "subborrow.64" => {
-                if unprefixed_name.ends_with("64") && this.tcx.sess.target.arch != Arch::X86_64 {
+                if unprefixed_name.ends_with("64") && ecx.tcx.sess.target.arch != Arch::X86_64 {
                     return interp_ok(EmulateItemResult::NotSupported);
                 }
 
-                let [cb_in, a, b] = this.check_shim_sig_unadjusted(link_name, args)?;
+                let [cb_in, a, b] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
                 let op = if unprefixed_name.starts_with("add") {
                     mir::BinOp::AddWithOverflow
                 } else {
                     mir::BinOp::SubWithOverflow
                 };
 
-                let (sum, cb_out) = carrying_add(this, cb_in, a, b, op)?;
-                this.write_scalar(cb_out, &this.project_field(dest, FieldIdx::ZERO)?)?;
-                this.write_immediate(*sum, &this.project_field(dest, FieldIdx::ONE)?)?;
+                let (sum, cb_out) = carrying_add(ecx, cb_in, a, b, op)?;
+                ecx.write_scalar(cb_out, &ecx.project_field(dest, FieldIdx::ZERO)?)?;
+                ecx.write_immediate(*sum, &ecx.project_field(dest, FieldIdx::ONE)?)?;
             }
 
             // Used to implement the `_mm_pause` function.
@@ -63,87 +63,87 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // the instruction behaves like a no-op, so it is always safe to call the
             // intrinsic.
             "sse2.pause" => {
-                let [] = this.check_shim_sig_unadjusted(link_name, args)?;
+                let [] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
                 // Only exhibit the spin-loop hint behavior when SSE2 is enabled.
-                if this.tcx.sess.unstable_target_features.contains(&Symbol::intern("sse2")) {
-                    this.yield_active_thread();
+                if ecx.tcx.sess.internal_target_features.contains(&Symbol::intern("sse2")) {
+                    ecx.yield_active_thread();
                 }
             }
 
             "pclmulqdq" | "pclmulqdq.256" | "pclmulqdq.512" => {
                 let mut len = 2; // in units of 64bits
-                this.expect_target_feature_for_intrinsic(link_name, "pclmulqdq")?;
+                ecx.expect_target_feature_for_intrinsic(link_name, "pclmulqdq")?;
                 if unprefixed_name.ends_with(".256") {
-                    this.expect_target_feature_for_intrinsic(link_name, "vpclmulqdq")?;
+                    ecx.expect_target_feature_for_intrinsic(link_name, "vpclmulqdq")?;
                     len = 4;
                 } else if unprefixed_name.ends_with(".512") {
-                    this.expect_target_feature_for_intrinsic(link_name, "vpclmulqdq")?;
-                    this.expect_target_feature_for_intrinsic(link_name, "avx512f")?;
+                    ecx.expect_target_feature_for_intrinsic(link_name, "vpclmulqdq")?;
+                    ecx.expect_target_feature_for_intrinsic(link_name, "avx512f")?;
                     len = 8;
                 }
 
-                let [left, right, imm] = this.check_shim_sig_unadjusted(link_name, args)?;
+                let [left, right, imm] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
 
-                pclmulqdq(this, left, right, imm, dest, len)?;
+                pclmulqdq(ecx, left, right, imm, dest, len)?;
             }
 
             name if name.starts_with("bmi.") => {
-                return bmi::EvalContextExt::emulate_x86_bmi_intrinsic(this, link_name, args, dest);
+                return bmi::EvalContextExt::emulate_x86_bmi_intrinsic(ecx, link_name, args, dest);
             }
             // The GFNI extension does not get its own namespace.
             // Check for instruction names instead.
             name if name.starts_with("vgf2p8affine") || name.starts_with("vgf2p8mulb") => {
                 return gfni::EvalContextExt::emulate_x86_gfni_intrinsic(
-                    this, link_name, args, dest,
+                    ecx, link_name, args, dest,
                 );
             }
             name if name.starts_with("sha") => {
-                return sha::EvalContextExt::emulate_x86_sha_intrinsic(this, link_name, args, dest);
+                return sha::EvalContextExt::emulate_x86_sha_intrinsic(ecx, link_name, args, dest);
             }
             name if name.starts_with("sse.") => {
-                return sse::EvalContextExt::emulate_x86_sse_intrinsic(this, link_name, args, dest);
+                return sse::EvalContextExt::emulate_x86_sse_intrinsic(ecx, link_name, args, dest);
             }
             name if name.starts_with("sse2.") => {
                 return sse2::EvalContextExt::emulate_x86_sse2_intrinsic(
-                    this, link_name, args, dest,
+                    ecx, link_name, args, dest,
                 );
             }
             name if name.starts_with("sse3.") => {
                 return sse3::EvalContextExt::emulate_x86_sse3_intrinsic(
-                    this, link_name, args, dest,
+                    ecx, link_name, args, dest,
                 );
             }
             name if name.starts_with("ssse3.") => {
                 return ssse3::EvalContextExt::emulate_x86_ssse3_intrinsic(
-                    this, link_name, args, dest,
+                    ecx, link_name, args, dest,
                 );
             }
             name if name.starts_with("sse41.") => {
                 return sse41::EvalContextExt::emulate_x86_sse41_intrinsic(
-                    this, link_name, args, dest,
+                    ecx, link_name, args, dest,
                 );
             }
             name if name.starts_with("sse42.") => {
                 return sse42::EvalContextExt::emulate_x86_sse42_intrinsic(
-                    this, link_name, args, dest,
+                    ecx, link_name, args, dest,
                 );
             }
             name if name.starts_with("aesni.") => {
                 return aesni::EvalContextExt::emulate_x86_aesni_intrinsic(
-                    this, link_name, args, dest,
+                    ecx, link_name, args, dest,
                 );
             }
             name if name.starts_with("avx.") => {
-                return avx::EvalContextExt::emulate_x86_avx_intrinsic(this, link_name, args, dest);
+                return avx::EvalContextExt::emulate_x86_avx_intrinsic(ecx, link_name, args, dest);
             }
             name if name.starts_with("avx2.") => {
                 return avx2::EvalContextExt::emulate_x86_avx2_intrinsic(
-                    this, link_name, args, dest,
+                    ecx, link_name, args, dest,
                 );
             }
             name if name.starts_with("avx512.") => {
                 return avx512::EvalContextExt::emulate_x86_avx512_intrinsic(
-                    this, link_name, args, dest,
+                    ecx, link_name, args, dest,
                 );
             }
 
@@ -506,6 +506,56 @@ fn shift_simd_by_scalar<'tcx>(
     interp_ok(())
 }
 
+fn shift_simd_by_simd<'tcx>(
+    ecx: &mut crate::MiriInterpCx<'tcx>,
+    left: &OpTy<'tcx>,
+    right: &OpTy<'tcx>,
+    which: ShiftOp,
+    dest: &MPlaceTy<'tcx>,
+) -> InterpResult<'tcx, ()> {
+    let (left, left_len) = ecx.project_to_simd(left)?;
+    let (right, right_len) = ecx.project_to_simd(right)?;
+    let (dest, dest_len) = ecx.project_to_simd(dest)?;
+
+    assert_eq!(dest_len, left_len);
+    assert_eq!(dest_len, right_len);
+
+    for i in 0..dest_len {
+        let left = ecx.read_scalar(&ecx.project_index(&left, i)?)?;
+        let right = ecx.read_scalar(&ecx.project_index(&right, i)?)?;
+        let dest = ecx.project_index(&dest, i)?;
+
+        // It is ok to saturate the value to u32::MAX because any value
+        // above BITS - 1 will produce the same result.
+        let shift = u32::try_from(right.to_uint(dest.layout.size)?).unwrap_or(u32::MAX);
+
+        let res = match which {
+            ShiftOp::Left => {
+                let left = left.to_uint(dest.layout.size)?;
+                let res = left.checked_shl(shift).unwrap_or(0);
+                // `truncate` is needed as left-shift can make the absolute value larger.
+                Scalar::from_uint(dest.layout.size.truncate(res), dest.layout.size)
+            }
+            ShiftOp::RightLogic => {
+                let left = left.to_uint(dest.layout.size)?;
+                let res = left.checked_shr(shift).unwrap_or(0);
+                // No `truncate` needed as right-shift can only make the absolute value smaller.
+                Scalar::from_uint(res, dest.layout.size)
+            }
+            ShiftOp::RightArith => {
+                let left = left.to_int(dest.layout.size)?;
+                // On overflow, copy the sign bit to the remaining bits
+                let res = left.checked_shr(shift).unwrap_or(left >> 127);
+                // No `truncate` needed as right-shift can only make the absolute value smaller.
+                Scalar::from_int(res, dest.layout.size)
+            }
+        };
+        ecx.write_scalar(res, &dest)?;
+    }
+
+    interp_ok(())
+}
+
 /// Takes a 128-bit vector, transmutes it to `[u64; 2]` and extracts
 /// the first value.
 fn extract_first_u64<'tcx>(
@@ -667,58 +717,6 @@ fn split_simd_to_128bit_chunks<'tcx, P: Projectable<'tcx, Provenance>>(
     interp_ok((num_chunks, items_per_chunk, chunked_op))
 }
 
-/// Horizontally performs `which` operation on adjacent values of
-/// `left` and `right` SIMD vectors and stores the result in `dest`.
-/// "Horizontal" means that the i-th output element is calculated
-/// from the elements 2*i and 2*i+1 of the concatenation of `left` and
-/// `right`.
-///
-/// Each 128-bit chunk is treated independently (i.e., the value for
-/// the is i-th 128-bit chunk of `dest` is calculated with the i-th
-/// 128-bit chunks of `left` and `right`).
-fn horizontal_bin_op<'tcx>(
-    ecx: &mut crate::MiriInterpCx<'tcx>,
-    which: mir::BinOp,
-    saturating: bool,
-    left: &OpTy<'tcx>,
-    right: &OpTy<'tcx>,
-    dest: &MPlaceTy<'tcx>,
-) -> InterpResult<'tcx, ()> {
-    assert_eq!(left.layout, dest.layout);
-    assert_eq!(right.layout, dest.layout);
-
-    let (num_chunks, items_per_chunk, left) = split_simd_to_128bit_chunks(ecx, left)?;
-    let (_, _, right) = split_simd_to_128bit_chunks(ecx, right)?;
-    let (_, _, dest) = split_simd_to_128bit_chunks(ecx, dest)?;
-
-    let middle = items_per_chunk / 2;
-    for i in 0..num_chunks {
-        let left = ecx.project_index(&left, i)?;
-        let right = ecx.project_index(&right, i)?;
-        let dest = ecx.project_index(&dest, i)?;
-
-        for j in 0..items_per_chunk {
-            // `j` is the index in `dest`
-            // `k` is the index of the 2-item chunk in `src`
-            let (k, src) = if j < middle { (j, &left) } else { (j.strict_sub(middle), &right) };
-            // `base_i` is the index of the first item of the 2-item chunk in `src`
-            let base_i = k.strict_mul(2);
-            let lhs = ecx.read_immediate(&ecx.project_index(src, base_i)?)?;
-            let rhs = ecx.read_immediate(&ecx.project_index(src, base_i.strict_add(1))?)?;
-
-            let res = if saturating {
-                Immediate::from(ecx.saturating_arith(which, &lhs, &rhs)?)
-            } else {
-                *ecx.binary_op(which, &lhs, &rhs)?
-            };
-
-            ecx.write_immediate(res, &ecx.project_index(&dest, j)?)?;
-        }
-    }
-
-    interp_ok(())
-}
-
 /// Conditionally multiplies the packed floating-point elements in
 /// `left` and `right` using the high 4 bits in `imm`, sums the calculated
 /// products (up to 4), and conditionally stores the sum in `dest` using
@@ -742,7 +740,7 @@ fn conditional_dot_product<'tcx>(
     let (_, _, dest) = split_simd_to_128bit_chunks(ecx, dest)?;
 
     let element_layout = left.layout.field(ecx, 0).field(ecx, 0);
-    assert!(items_per_chunk <= 4);
+    assert!(matches!(items_per_chunk, 2 | 4));
 
     // `imm` is a `u8` for SSE4.1 or an `i32` for AVX :/
     let imm = ecx.read_scalar(imm)?.to_uint(imm.layout.size)?;
@@ -752,19 +750,28 @@ fn conditional_dot_product<'tcx>(
         let right = ecx.project_index(&right, i)?;
         let dest = ecx.project_index(&dest, i)?;
 
-        // Calculate dot product
-        // Elements are floating point numbers, but we can use `from_int`
-        // for the initial value because the representation of 0.0 is all zero bits.
-        let mut sum = ImmTy::from_int(0u8, element_layout);
+        // Masked-out products are +0.0, represented by all zero bits.
+        let mut products: [_; 4] = std::array::from_fn(|_| ImmTy::from_int(0u8, element_layout));
         for j in 0..items_per_chunk {
             if imm & (1 << j.strict_add(4)) != 0 {
                 let left = ecx.read_immediate(&ecx.project_index(&left, j)?)?;
                 let right = ecx.read_immediate(&ecx.project_index(&right, j)?)?;
 
-                let mul = ecx.binary_op(mir::BinOp::Mul, &left, &right)?;
-                sum = ecx.binary_op(mir::BinOp::Add, &sum, &mul)?;
+                products[usize::try_from(j).unwrap()] =
+                    ecx.binary_op(mir::BinOp::Mul, &left, &right)?;
             }
         }
+
+        // Reduce in the right order (tree reduction).
+        let sum = match items_per_chunk {
+            2 => ecx.binary_op(mir::BinOp::Add, &products[0], &products[1])?,
+            4 => {
+                let lower_sum = ecx.binary_op(mir::BinOp::Add, &products[0], &products[1])?;
+                let upper_sum = ecx.binary_op(mir::BinOp::Add, &products[2], &products[3])?;
+                ecx.binary_op(mir::BinOp::Add, &lower_sum, &upper_sum)?
+            }
+            _ => unreachable!(),
+        };
 
         // Write to destination (conditioned to imm)
         for j in 0..items_per_chunk {
@@ -843,6 +850,105 @@ fn test_high_bits_masked<'tcx>(
     }
 
     interp_ok((direct, negated))
+}
+
+/// Average packed unsigned 8-bit or 16-bit integers in `left` and `right`,
+/// rounding up, and store the results in `dest`. Each element is computed
+/// as `(left + right + 1) >> 1` without intermediate overflow.
+///
+/// The elements are widened according to their own signedness, so the
+/// operands are expected to be vectors of unsigned integers.
+///
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_avg_epu8>
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_avg_epu16>
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm256_avg_epu8>
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm256_avg_epu16>
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm512_avg_epu8>
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm512_avg_epu16>
+fn pavg<'tcx>(
+    ecx: &mut crate::MiriInterpCx<'tcx>,
+    left: &OpTy<'tcx>,
+    right: &OpTy<'tcx>,
+    dest: &MPlaceTy<'tcx>,
+) -> InterpResult<'tcx, ()> {
+    let (left, left_len) = ecx.project_to_simd(left)?;
+    let (right, right_len) = ecx.project_to_simd(right)?;
+    let (dest, dest_len) = ecx.project_to_simd(dest)?;
+
+    assert_eq!(dest_len, left_len);
+    assert_eq!(dest_len, right_len);
+
+    for i in 0..dest_len {
+        let left = ecx.read_immediate(&ecx.project_index(&left, i)?)?;
+        let right = ecx.read_immediate(&ecx.project_index(&right, i)?)?;
+        let dest = ecx.project_index(&dest, i)?;
+
+        // Widen the operands to avoid overflow
+        let twice_wide = ecx.layout_of(ecx.get_twice_wide_int_ty(left.layout.ty))?;
+        let left = ecx.int_to_int_or_float(&left, twice_wide)?;
+        let right = ecx.int_to_int_or_float(&right, twice_wide)?;
+
+        // Calculate left + right + 1
+        let added = ecx.binary_op(mir::BinOp::Add, &left, &right)?;
+        let added = ecx.binary_op(mir::BinOp::Add, &added, &ImmTy::from_uint(1u32, twice_wide))?;
+
+        // Calculate (left + right + 1) / 2
+        let divided =
+            ecx.binary_op(mir::BinOp::Div, &added, &ImmTy::from_uint(2u32, twice_wide))?;
+
+        // Narrow back to the original type
+        let res = ecx.int_to_int_or_float(&divided, dest.layout)?;
+        ecx.write_immediate(*res, &dest)?;
+    }
+
+    interp_ok(())
+}
+
+/// Multiply packed 16-bit integers in `left` and `right`, producing intermediate 32-bit integers,
+/// and store the high 16 bits of the intermediate integers in `dest`.
+///
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_mulhi_epi16>
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_mulhi_epu16>
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm256_mulhi_epi16>
+/// <https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm256_mulhi_epu16>
+fn pmulh<'tcx>(
+    ecx: &mut crate::MiriInterpCx<'tcx>,
+    left: &OpTy<'tcx>,
+    right: &OpTy<'tcx>,
+    dest: &MPlaceTy<'tcx>,
+) -> InterpResult<'tcx, ()> {
+    let (left, left_len) = ecx.project_to_simd(left)?;
+    let (right, right_len) = ecx.project_to_simd(right)?;
+    let (dest, dest_len) = ecx.project_to_simd(dest)?;
+
+    assert_eq!(dest_len, left_len);
+    assert_eq!(dest_len, right_len);
+
+    for i in 0..dest_len {
+        let left = ecx.read_immediate(&ecx.project_index(&left, i)?)?;
+        let right = ecx.read_immediate(&ecx.project_index(&right, i)?)?;
+        let dest = ecx.project_index(&dest, i)?;
+
+        // Widen the operands to avoid overflow
+        let twice_wide = ecx.layout_of(ecx.get_twice_wide_int_ty(left.layout.ty))?;
+        let left = ecx.int_to_int_or_float(&left, twice_wide)?;
+        let right = ecx.int_to_int_or_float(&right, twice_wide)?;
+
+        // Multiply
+        let multiplied = ecx.binary_op(mir::BinOp::Mul, &left, &right)?;
+        // Keep the high half
+        let high = ecx.binary_op(
+            mir::BinOp::Shr,
+            &multiplied,
+            &ImmTy::from_uint(dest.layout.size.bits(), twice_wide),
+        )?;
+
+        // Narrow back to the original type
+        let res = ecx.int_to_int_or_float(&high, dest.layout)?;
+        ecx.write_immediate(*res, &dest)?;
+    }
+
+    interp_ok(())
 }
 
 /// Compute the sum of absolute differences of quadruplets of unsigned

@@ -7,7 +7,6 @@ use crate::*;
 pub enum ThreadNameResult {
     Ok,
     NameTooLong,
-    ThreadNotFound,
 }
 
 impl<'tcx> EvalContextExt<'tcx> for crate::MiriInterpCx<'tcx> {}
@@ -19,20 +18,20 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         start_routine: &OpTy<'tcx>,
         arg: &OpTy<'tcx>,
     ) -> InterpResult<'tcx, ()> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
 
-        let thread_info_place = this.deref_pointer_as(thread, this.libc_ty_layout("pthread_t"))?;
+        let thread_info_place = ecx.deref_pointer(thread)?;
 
-        let start_routine = this.read_pointer(start_routine)?;
+        let start_routine = ecx.read_pointer(start_routine)?;
 
-        let func_arg = this.read_immediate(arg)?;
+        let func_arg = ecx.read_immediate(arg)?;
 
-        this.start_regular_thread(
+        ecx.start_regular_thread(
             Some(thread_info_place),
             start_routine,
             ExternAbi::C { unwind: false },
             func_arg,
-            this.machine.layouts.mut_raw_ptr,
+            ecx.machine.layouts.unit_ptr_mut,
             None,
         )?;
 
@@ -45,24 +44,22 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         retval: &OpTy<'tcx>,
         return_dest: &MPlaceTy<'tcx>,
     ) -> InterpResult<'tcx> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
 
-        if !this.ptr_is_null(this.read_pointer(retval)?)? {
+        if !ecx.ptr_is_null(ecx.read_pointer(retval)?)? {
             // FIXME: implement reading the thread function's return place.
             throw_unsup_format!("Miri supports pthread_join only with retval==NULL");
         }
 
-        let thread = this.read_scalar(thread)?.to_int(this.libc_ty_layout("pthread_t").size)?;
+        let thread = ecx.read_scalar(thread)?.to_int(ecx.libc_ty_layout("pthread_t").size)?;
         // Joining a terminated thread is valid.
-        let thread = match this.thread_id_try_from(thread) {
+        let thread = match ecx.thread_id_try_from(thread) {
             Ok(id) | Err(ThreadLookupError::Terminated(id)) => id,
-            Err(ThreadLookupError::InvalidId) => {
-                this.write_scalar(this.eval_libc("ESRCH"), return_dest)?;
-                return interp_ok(());
-            }
+            Err(ThreadLookupError::InvalidId) =>
+                throw_ub_format!("pthread_join: invalid pthread_t handle"),
         };
 
-        this.join_thread_exclusive(
+        ecx.join_thread_exclusive(
             thread,
             /* success_retval */ Scalar::from_u32(0),
             return_dest,
@@ -70,30 +67,31 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     }
 
     fn pthread_detach(&mut self, thread: &OpTy<'tcx>) -> InterpResult<'tcx, Scalar> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
 
-        let thread = this.read_scalar(thread)?.to_int(this.libc_ty_layout("pthread_t").size)?;
+        let thread = ecx.read_scalar(thread)?.to_int(ecx.libc_ty_layout("pthread_t").size)?;
         // Detaching a terminated thread is valid.
-        let thread = match this.thread_id_try_from(thread) {
+        let thread = match ecx.thread_id_try_from(thread) {
             Ok(id) | Err(ThreadLookupError::Terminated(id)) => id,
-            Err(ThreadLookupError::InvalidId) => return interp_ok(this.eval_libc("ESRCH")),
+            Err(ThreadLookupError::InvalidId) =>
+                throw_ub_format!("pthread_detach: invalid pthread_t handle"),
         };
-        this.detach_thread(thread, /*allow_terminated_joined*/ false)?;
+        ecx.detach_thread(thread, /*allow_terminated_joined*/ false)?;
 
         interp_ok(Scalar::from_u32(0))
     }
 
-    fn pthread_self(&mut self) -> InterpResult<'tcx, Scalar> {
-        let this = self.eval_context_mut();
+    fn pthread_self(&self) -> InterpResult<'tcx, Scalar> {
+        let ecx = self.eval_context_ref();
 
-        let thread_id = this.active_thread();
-        interp_ok(Scalar::from_uint(thread_id.to_u32(), this.libc_ty_layout("pthread_t").size))
+        let thread_id = ecx.active_thread();
+        interp_ok(Scalar::from_uint(thread_id.to_u32(), ecx.libc_ty_layout("pthread_t").size))
     }
 
     /// Set the name of the specified thread. If the name including the null terminator
     /// is longer or equals to `name_max_len`, then if `truncate` is set the truncated name
     /// is used as the thread name, otherwise [`ThreadNameResult::NameTooLong`] is returned.
-    /// If the specified thread wasn't found, [`ThreadNameResult::ThreadNotFound`] is returned.
+    /// If the specified thread wasn't found, UB is raised.
     fn pthread_setname_np(
         &mut self,
         thread: Scalar,
@@ -101,14 +99,16 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         name_max_len: u64,
         truncate: bool,
     ) -> InterpResult<'tcx, ThreadNameResult> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
 
-        let thread = thread.to_int(this.libc_ty_layout("pthread_t").size)?;
-        let Ok(thread) = this.thread_id_try_from(thread) else {
-            return interp_ok(ThreadNameResult::ThreadNotFound);
+        let thread = thread.to_int(ecx.libc_ty_layout("pthread_t").size)?;
+        let Ok(thread) = ecx.thread_id_try_from(thread) else {
+            // On Linux this has been observed to segfault. FreeBSD documents an error code
+            // for this condition but it is not clear whether they *guarantee* that error.
+            throw_ub_format!("pthread_setname_np: invalid pthread_t handle");
         };
-        let name = name.to_pointer(this)?;
-        let mut name = this.read_c_str(name)?.to_owned();
+        let name = name.to_pointer(ecx);
+        let mut name = ecx.read_c_str(name)?.to_owned();
 
         // Comparing with `>=` to account for null terminator.
         if name.len().to_u64() >= name_max_len {
@@ -119,7 +119,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             }
         }
 
-        this.set_thread_name(thread, name);
+        ecx.set_thread_name(thread, name);
 
         interp_ok(ThreadNameResult::Ok)
     }
@@ -127,7 +127,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     /// Get the name of the specified thread. If the thread name doesn't fit
     /// the buffer, then if `truncate` is set the truncated name is written out,
     /// otherwise [`ThreadNameResult::NameTooLong`] is returned. If the specified
-    /// thread wasn't found, [`ThreadNameResult::ThreadNotFound`] is returned.
+    /// thread wasn't found, UB is raised.
     fn pthread_getname_np(
         &mut self,
         thread: Scalar,
@@ -135,32 +135,34 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         len: Scalar,
         truncate: bool,
     ) -> InterpResult<'tcx, ThreadNameResult> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
 
-        let thread = thread.to_int(this.libc_ty_layout("pthread_t").size)?;
-        let Ok(thread) = this.thread_id_try_from(thread) else {
-            return interp_ok(ThreadNameResult::ThreadNotFound);
+        let thread = thread.to_int(ecx.libc_ty_layout("pthread_t").size)?;
+        let Ok(thread) = ecx.thread_id_try_from(thread) else {
+            // On Linux this has been observed to segfault. FreeBSD documents an error code
+            // for this condition but it is not clear whether they *guarantee* that error.
+            throw_ub_format!("pthread_getname_np: invalid pthread_t handle");
         };
-        let name_out = name_out.to_pointer(this)?;
-        let len = len.to_target_usize(this)?;
+        let name_out = name_out.to_pointer(ecx);
+        let len = len.to_target_usize(ecx)?;
 
         // FIXME: we should use the program name if the thread name is not set
-        let name = this.get_thread_name(thread).unwrap_or(b"<unnamed>").to_owned();
+        let name = ecx.get_thread_name(thread).unwrap_or(b"<unnamed>").to_owned();
         let name = match truncate {
             true => &name[..name.len().min(len.try_into().unwrap_or(usize::MAX).saturating_sub(1))],
             false => &name,
         };
 
-        let (success, _written) = this.write_c_str(name, name_out, len)?;
+        let (success, _written) = ecx.write_c_str(name, name_out, len)?;
         let res = if success { ThreadNameResult::Ok } else { ThreadNameResult::NameTooLong };
 
         interp_ok(res)
     }
 
     fn sched_yield(&mut self) -> InterpResult<'tcx, ()> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
 
-        this.yield_active_thread();
+        ecx.yield_active_thread();
 
         interp_ok(())
     }

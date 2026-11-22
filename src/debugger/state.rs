@@ -217,7 +217,7 @@ fn capture_locals<'tcx>(
     frame: &Frame<'tcx, Provenance, FrameExtra<'tcx>>,
 ) -> Vec<LocalInfo> {
     frame
-        .locals
+        .locals()
         .iter()
         .enumerate()
         .map(|(idx, local)| {
@@ -225,7 +225,7 @@ fn capture_locals<'tcx>(
             let body = frame.body();
             let local_decl = &body.local_decls[local_idx];
             let (value, kind) = format_local(ecx, frame, local_idx);
-            let (alloc_id, ptr) = match local.as_mplace_or_imm() {
+            let (alloc_id, ptr) = match local.as_mplace_or_imm_ghost() {
                 Some(Either::Left((ptr, _))) =>
                     if let Some(prov) = ptr.provenance {
                         let ptr = Ptr::new(prov, ptr.addr());
