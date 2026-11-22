@@ -96,6 +96,10 @@ pub struct GlobalStateInner {
     next_stack_vaddr: u64,
     /// Next virtual address cursor for non-global allocations.
     next_dyn_vaddr: u64,
+    /// kmiri: `extern` functions whose address the kernel config gives in `[layout]`.
+    /// The address is the symbol value. A function holds no memory, so these stay out of
+    /// `base_paddr` and `int_to_ptr_map`, where a data allocation may sit at the same address.
+    layout_fn_vaddr: FxHashMap<AllocId, u64>,
 }
 
 impl VisitProvenance for GlobalStateInner {
@@ -112,6 +116,7 @@ impl VisitProvenance for GlobalStateInner {
             next_cpu_local_paddr: _,
             next_stack_vaddr: _,
             next_dyn_vaddr: _,
+            layout_fn_vaddr: _,
         } = self;
         // Though base_addr, int_to_ptr_map, and exposed contain AllocIds, we do not want to visit them.
         // int_to_ptr_map and exposed must contain only live allocations, and those
@@ -142,6 +147,7 @@ impl GlobalStateInner {
             next_stack_vaddr: kernel_code_paddr_to_vaddr(mirch::kernel_stack_end_addr()) as u64,
             next_cpu_local_paddr: kernel_code_paddr_to_vaddr(mirch::cpu_local_start_addr()) as u64,
             next_dyn_vaddr: kernel_code_paddr_to_vaddr(mirch::total_mem_size()) as u64,
+            layout_fn_vaddr: FxHashMap::default(),
         }
     }
 
@@ -901,6 +907,16 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     .cloned()
                     .unwrap_or_else(|| kernel_code_paddr_to_vaddr(paddr as usize) as u64),
             None => {
+                if let Some(&vaddr) = global_state.layout_fn_vaddr.get(&alloc_id) {
+                    return interp_ok(vaddr);
+                }
+                if let Some(link_name) = MiriMachine::unresolved_foreign_fn_symbol(ecx, alloc_id)?
+                    && let Some(&vaddr) = ecx.machine.foreign_symbol_addr_map.get(&link_name)
+                {
+                    global_state.layout_fn_vaddr.insert(alloc_id, vaddr);
+                    return interp_ok(vaddr);
+                }
+
                 // First time we're looking for the absolute address of this allocation.
                 let memory_kind =
                     memory_kind.expect("memory_kind is required since alloc_id is not cached");
@@ -1185,6 +1201,11 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let info = ecx.get_alloc_info(alloc_id);
         if info.kind == AllocKind::TypeId {
             return Some((alloc_id, vaddr));
+        }
+
+        // A `[layout]` function: the address is the symbol value, there is no memory to walk.
+        if let Some(&base) = ecx.machine.alloc_addresses.borrow().layout_fn_vaddr.get(&alloc_id) {
+            return Some((alloc_id, Size::from_bytes(vaddr.bytes().wrapping_sub(base))));
         }
 
         // This cannot fail: since we already have a pointer with that provenance, adjust_alloc_root_pointer

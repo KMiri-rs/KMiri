@@ -1146,7 +1146,7 @@ impl<'tcx> MiriMachine<'tcx> {
         def_id.is_local() || self.user_relevant_crates.contains(&def_id.krate)
     }
 
-    fn unresolved_foreign_fn_symbol(
+    pub(crate) fn unresolved_foreign_fn_symbol(
         ecx: &MiriInterpCx<'tcx>,
         alloc_id: AllocId,
     ) -> InterpResult<'tcx, Option<Symbol>> {
@@ -1844,13 +1844,12 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
                 }
             }
 
-            if let Some(link_name) = MiriMachine::unresolved_foreign_fn_symbol(ecx, alloc_id)? {
-                if let Some(&addr) = ecx.machine.foreign_symbol_addr_map.get(&link_name) {
-                    return interp_ok(interpret::Pointer::new(
-                        Provenance::Wildcard,
-                        Size::from_bytes(addr),
-                    ));
-                }
+            if let Some(link_name) = MiriMachine::unresolved_foreign_fn_symbol(ecx, alloc_id)?
+                // A `[layout]` symbol keeps its function allocation: `addr_from_alloc_id` places
+                // it at the symbol address, so a cast that checks the input is a function
+                // pointer still sees one.
+                && !ecx.machine.foreign_symbol_addr_map.contains_key(&link_name)
+            {
                 let mut pending = ecx.machine.pending_unsupported_foreign_item.borrow_mut();
                 if pending.is_none() {
                     *pending = Some(format!(
