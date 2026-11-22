@@ -13,6 +13,7 @@
 //!   metadata we remembered when pushing said frame.
 
 use rustc_abi::{CanonAbi, ExternAbi};
+use rustc_middle::ty::Ty;
 use rustc_middle::{mir, ty};
 use rustc_span::Symbol;
 use rustc_target::callconv::FnAbi;
@@ -158,7 +159,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     /// in the interrupted code; natively the unwinder would have to cross the trap frame.
     fn kmiri_raise_exception(
         &mut self,
-        abi: &FnAbi<'tcx, ty::Ty<'tcx>>,
+        abi: &FnAbi<'tcx, Ty<'tcx>>,
         args: &[OpTy<'tcx>],
         dest: &PlaceTy<'tcx>,
         ret: Option<mir::BasicBlock>,
