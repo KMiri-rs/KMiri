@@ -1,4 +1,7 @@
-#![feature(allocator_api, slice_ptr_get)]
+//@revisions: default symbolic
+//@[symbolic]compile-flags: -Zmiri-symbolic-alignment-check
+
+#![feature(slice_ptr_get)]
 
 use std::alloc::{Allocator as _, Global, GlobalAlloc, Layout, System};
 
@@ -7,10 +10,12 @@ static ALLOCATOR: Allocator = Allocator;
 
 struct Allocator;
 
+const SIZE: usize = 16 * 7;
+
 unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // use specific size to avoid getting triggered by rt
-        if layout.size() == 123 {
+        if layout.size() == SIZE {
             println!("Allocated!")
         }
 
@@ -18,7 +23,7 @@ unsafe impl GlobalAlloc for Allocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if layout.size() == 123 {
+        if layout.size() == SIZE {
             println!("Deallocated!")
         }
 
@@ -27,13 +32,16 @@ unsafe impl GlobalAlloc for Allocator {
 }
 
 fn main() {
-    // Only okay because we explicitly set a global allocator that uses the system allocator!
-    let l = Layout::from_size_align(123, 1).unwrap();
+    // Below we mix using `Global` and `System`. This is undefined behavior that Miri should
+    // detect, but currently it does not. <https://github.com/rust-lang/miri/issues/2686>
+
+    let l = Layout::from_size_align(SIZE, 1).unwrap();
     let ptr = Global.allocate(l).unwrap().as_non_null_ptr(); // allocating with Global...
     unsafe {
         System.deallocate(ptr, l);
     } // ... and deallocating with System.
 
+    let l = Layout::from_size_align(SIZE, 16).unwrap();
     let ptr = System.allocate(l).unwrap().as_non_null_ptr(); // allocating with System...
     unsafe {
         Global.deallocate(ptr, l);

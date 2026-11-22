@@ -1,4 +1,3 @@
-use rustc_abi::CanonAbi;
 use rustc_middle::ty::Ty;
 use rustc_span::Symbol;
 use rustc_target::callconv::FnAbi;
@@ -23,162 +22,161 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         args: &[OpTy<'tcx>],
         dest: &MPlaceTy<'tcx>,
     ) -> InterpResult<'tcx, EmulateItemResult> {
-        let this = self.eval_context_mut();
+        let ecx = self.eval_context_mut();
         match link_name.as_str() {
             // epoll, eventfd (NOT available on Solaris!)
             "epoll_create1" => {
-                this.assert_target_os(Os::Illumos, "epoll_create1");
-                let [flag] = this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                let result = this.epoll_create1(flag)?;
-                this.write_scalar(result, dest)?;
+                ecx.assert_target_os(Os::Illumos, "epoll_create1");
+                let [flag] = &ecx
+                    .check_shim_sig(shim_sig!(extern "C" fn(i32) -> i32), (link_name, abi, args))?;
+                let result = ecx.epoll_create1(flag)?;
+                ecx.write_scalar(result, dest)?;
             }
             "epoll_ctl" => {
-                this.assert_target_os(Os::Illumos, "epoll_ctl");
-                let [epfd, op, fd, event] =
-                    this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                let result = this.epoll_ctl(epfd, op, fd, event)?;
-                this.write_scalar(result, dest)?;
+                ecx.assert_target_os(Os::Illumos, "epoll_ctl");
+                let [epfd, op, fd, event] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(i32, i32, i32, *libc::epoll_event) -> i32),
+                    (link_name, abi, args),
+                )?;
+                let result = ecx.epoll_ctl(epfd, op, fd, event)?;
+                ecx.write_scalar(result, dest)?;
             }
             "epoll_wait" => {
-                this.assert_target_os(Os::Illumos, "epoll_wait");
-                let [epfd, events, maxevents, timeout] =
-                    this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                this.epoll_wait(epfd, events, maxevents, timeout, dest)?;
+                ecx.assert_target_os(Os::Illumos, "epoll_wait");
+                let [epfd, events, maxevents, timeout] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(i32, *libc::epoll_event, i32, i32) -> i32),
+                    (link_name, abi, args),
+                )?;
+                ecx.epoll_wait(epfd, events, maxevents, timeout, dest)?;
             }
             "eventfd" => {
-                this.assert_target_os(Os::Illumos, "eventfd");
-                let [val, flag] = this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                let result = this.eventfd(val, flag)?;
-                this.write_scalar(result, dest)?;
+                ecx.assert_target_os(Os::Illumos, "eventfd");
+                let [val, flag] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(u32, i32) -> i32),
+                    (link_name, abi, args),
+                )?;
+                let result = ecx.eventfd(val, flag)?;
+                ecx.write_scalar(result, dest)?;
             }
 
             // Threading
             "pthread_setname_np" => {
-                let [thread, name] =
-                    this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
+                let [thread, name] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(libc::pthread_t, *_) -> i32),
+                    (link_name, abi, args),
+                )?;
                 // THREAD_NAME_MAX allows a thread name of 31+1 length
                 // https://github.com/illumos/illumos-gate/blob/7671517e13b8123748eda4ef1ee165c6d9dba7fe/usr/src/uts/common/sys/thread.h#L613
                 let max_len = 32;
                 // See https://illumos.org/man/3C/pthread_setname_np for the error codes.
-                let res = match this.pthread_setname_np(
-                    this.read_scalar(thread)?,
-                    this.read_scalar(name)?,
+                let res = match ecx.pthread_setname_np(
+                    ecx.read_scalar(thread)?,
+                    ecx.read_scalar(name)?,
                     max_len,
                     /* truncate */ false,
                 )? {
                     ThreadNameResult::Ok => Scalar::from_u32(0),
-                    ThreadNameResult::NameTooLong => this.eval_libc("ERANGE"),
-                    ThreadNameResult::ThreadNotFound => this.eval_libc("ESRCH"),
+                    ThreadNameResult::NameTooLong => ecx.eval_libc("ERANGE"),
                 };
-                this.write_scalar(res, dest)?;
+                ecx.write_scalar(res, dest)?;
             }
             "pthread_getname_np" => {
-                let [thread, name, len] =
-                    this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
+                let [thread, name, len] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(libc::pthread_t, *_, usize) -> i32),
+                    (link_name, abi, args),
+                )?;
                 // See https://illumos.org/man/3C/pthread_getname_np for the error codes.
-                let res = match this.pthread_getname_np(
-                    this.read_scalar(thread)?,
-                    this.read_scalar(name)?,
-                    this.read_scalar(len)?,
+                let res = match ecx.pthread_getname_np(
+                    ecx.read_scalar(thread)?,
+                    ecx.read_scalar(name)?,
+                    ecx.read_scalar(len)?,
                     /* truncate */ false,
                 )? {
                     ThreadNameResult::Ok => Scalar::from_u32(0),
-                    ThreadNameResult::NameTooLong => this.eval_libc("ERANGE"),
-                    ThreadNameResult::ThreadNotFound => this.eval_libc("ESRCH"),
+                    ThreadNameResult::NameTooLong => ecx.eval_libc("ERANGE"),
                 };
-                this.write_scalar(res, dest)?;
-            }
-
-            // File related shims
-            "stat" => {
-                // FIXME: This does not have a direct test (#3179).
-                let [path, buf] = this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                let result = this.stat(path, buf)?;
-                this.write_scalar(result, dest)?;
-            }
-            "lstat" => {
-                // FIXME: This does not have a direct test (#3179).
-                let [path, buf] = this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                let result = this.lstat(path, buf)?;
-                this.write_scalar(result, dest)?;
+                ecx.write_scalar(res, dest)?;
             }
 
             // Sockets and pipes
             "__xnet_socketpair" => {
-                let [domain, type_, protocol, sv] =
-                    this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                let result = this.socketpair(domain, type_, protocol, sv)?;
-                this.write_scalar(result, dest)?;
+                let [domain, type_, protocol, sv] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(i32, i32, i32, *i32) -> i32),
+                    (link_name, abi, args),
+                )?;
+                let result = ecx.socketpair(domain, type_, protocol, sv)?;
+                ecx.write_scalar(result, dest)?;
             }
 
             // Network sockets
             "__xnet_socket" | "__xnet7_socket" => {
-                let [domain, type_, protocol] = this.check_shim_sig(
+                let [domain, type_, protocol] = &ecx.check_shim_sig(
                     shim_sig!(extern "C" fn(i32, i32, i32) -> i32),
-                    link_name,
-                    abi,
-                    args,
+                    (link_name, abi, args),
                 )?;
-                let result = this.socket(domain, type_, protocol)?;
-                this.write_scalar(result, dest)?;
+                let result = ecx.socket(domain, type_, protocol)?;
+                ecx.write_scalar(result, dest)?;
             }
             "__xnet_bind" => {
-                let [socket, address, address_len] = this.check_shim_sig(
-                    shim_sig!(extern "C" fn(i32, *const _, libc::socklen_t) -> i32),
-                    link_name,
-                    abi,
-                    args,
+                let [socket, address, address_len] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(i32, *libc::sockaddr, libc::socklen_t) -> i32),
+                    (link_name, abi, args),
                 )?;
-                let result = this.bind(socket, address, address_len)?;
-                this.write_scalar(result, dest)?;
+                let result = ecx.bind(socket, address, address_len)?;
+                ecx.write_scalar(result, dest)?;
             }
             "__xnet_connect" => {
-                let [socket, address, address_len] = this.check_shim_sig(
-                    shim_sig!(extern "C" fn(i32, *const _, libc::socklen_t) -> i32),
-                    link_name,
-                    abi,
-                    args,
+                let [socket, address, address_len] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(i32, *libc::sockaddr, libc::socklen_t) -> i32),
+                    (link_name, abi, args),
                 )?;
-                this.connect(socket, address, address_len, dest)?;
+                ecx.connect(socket, address, address_len, dest)?;
+            }
+            "__xnet_sendto" => {
+                let [socket, buffer, length, flags, dest_addr, dest_addr_len] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(i32, *_, libc::size_t, i32, *libc::sockaddr, libc::socklen_t) -> libc::ssize_t),
+                    (link_name, abi, args),
+                )?;
+                ecx.send(socket, buffer, length, flags, Some((dest_addr, dest_addr_len)), dest)?;
             }
             "__xnet_getaddrinfo" => {
-                let [node, service, hints, res] = this.check_shim_sig(
-                    shim_sig!(extern "C" fn(*const _, *const _, *const _, *mut _) -> i32),
-                    link_name,
-                    abi,
-                    args,
+                let [node, service, hints, res] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(*_, *_, *_, **_) -> i32),
+                    (link_name, abi, args),
                 )?;
-                let result = this.getaddrinfo(node, service, hints, res)?;
-                this.write_scalar(result, dest)?;
+                let result = ecx.getaddrinfo(node, service, hints, res)?;
+                ecx.write_scalar(result, dest)?;
             }
             "__xnet_getsockopt" => {
-                let [socket, level, option_name, option_value, option_len] = this.check_shim_sig(
-                    shim_sig!(extern "C" fn(i32, i32, i32, *mut _, *mut _) -> i32),
-                    link_name,
-                    abi,
-                    args,
+                let [socket, level, option_name, option_value, option_len] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(i32, i32, i32, *_, *_) -> i32),
+                    (link_name, abi, args),
                 )?;
                 let result =
-                    this.getsockopt(socket, level, option_name, option_value, option_len)?;
-                this.write_scalar(result, dest)?;
+                    ecx.getsockopt(socket, level, option_name, option_value, option_len)?;
+                ecx.write_scalar(result, dest)?;
             }
 
             // Miscellaneous
             "___errno" => {
-                let [] = this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                let errno_place = this.last_error_place()?;
-                this.write_scalar(errno_place.to_ref(this).to_scalar(), dest)?;
+                let [] =
+                    &ecx.check_shim_sig(shim_sig!(extern "C" fn() -> *_), (link_name, abi, args))?;
+                let errno_place = ecx.last_error_place()?;
+                ecx.write_scalar(errno_place.to_ref(ecx).to_scalar(), dest)?;
             }
 
             "stack_getbounds" => {
                 // FIXME: This does not have a direct test (#3179).
-                let [stack] = this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                let stack = this.deref_pointer_as(stack, this.libc_ty_layout("stack_t"))?;
+                let [stack] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(*libc::stack_t) -> i32),
+                    (link_name, abi, args),
+                )?;
+                let stack = ecx.deref_pointer(stack)?;
 
-                this.write_int_fields_named(
+                ecx.write_int_fields_named(
                     &[
-                        ("ss_sp", this.machine.stack_addr.into()),
-                        ("ss_size", this.machine.stack_size.into()),
+                        ("ss_sp", ecx.machine.stack_addr.into()),
+                        ("ss_size", ecx.machine.stack_size.into()),
                         // field set to 0 means not in an alternate signal stack
                         // https://docs.oracle.com/cd/E86824_01/html/E54766/stack-getbounds-3c.html
                         ("ss_flags", 0),
@@ -186,44 +184,49 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     &stack,
                 )?;
 
-                this.write_null(dest)?;
+                ecx.write_int(0, dest)?;
             }
 
             "pset_info" => {
                 // FIXME: This does not have a direct test (#3179).
-                let [pset, tpe, cpus, list] =
-                    this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
+                let [pset, tpe, cpus, list] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(i32, *_, *u32, *_) -> i32),
+                    (link_name, abi, args),
+                )?;
                 // We do not need to handle the current process cpu mask, available_parallelism
                 // implementation pass null anyway. We only care for the number of
                 // cpus.
                 // https://docs.oracle.com/cd/E88353_01/html/E37841/pset-info-2.html
 
-                let pset = this.read_scalar(pset)?.to_i32()?;
-                let tpe = this.read_pointer(tpe)?;
-                let list = this.read_pointer(list)?;
+                let pset = ecx.read_scalar(pset)?.to_i32()?;
+                let tpe = ecx.read_pointer(tpe)?;
+                let list = ecx.read_pointer(list)?;
 
-                let ps_myid = this.eval_libc_i32("PS_MYID");
+                let ps_myid = ecx.eval_libc_i32("PS_MYID");
                 if ps_myid != pset {
                     throw_unsup_format!("pset_info is only supported with pset==PS_MYID");
                 }
 
-                if !this.ptr_is_null(tpe)? {
+                if !ecx.ptr_is_null(tpe)? {
                     throw_unsup_format!("pset_info is only supported with type==NULL");
                 }
 
-                if !this.ptr_is_null(list)? {
+                if !ecx.ptr_is_null(list)? {
                     throw_unsup_format!("pset_info is only supported with list==NULL");
                 }
 
-                let cpus = this.deref_pointer_as(cpus, this.machine.layouts.u32)?;
-                this.write_scalar(Scalar::from_u32(this.machine.num_cpus), &cpus)?;
-                this.write_null(dest)?;
+                let cpus = ecx.deref_pointer(cpus)?;
+                ecx.write_scalar(Scalar::from_u32(ecx.machine.num_cpus), &cpus)?;
+                ecx.write_int(0, dest)?;
             }
 
             "__sysconf_xpg7" => {
-                let [val] = this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
-                let result = this.sysconf(val)?;
-                this.write_scalar(result, dest)?;
+                let [val] = &ecx.check_shim_sig(
+                    shim_sig!(extern "C" fn(i32) -> isize),
+                    (link_name, abi, args),
+                )?;
+                let result = ecx.sysconf(val)?;
+                ecx.write_scalar(result, dest)?;
             }
 
             _ => return interp_ok(EmulateItemResult::NotSupported),

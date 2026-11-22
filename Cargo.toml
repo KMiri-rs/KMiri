@@ -16,6 +16,13 @@ name = "miri"
 test = false    # we have no unit tests
 doctest = false # and no doc tests
 
+[[bin]]
+name = "priroda"
+path = "priroda/src/main.rs"
+test = false
+doctest = false
+required-features = ["priroda"]
+
 [dependencies]
 getrandom = { version = "0.4", features = ["std"] }
 rand = "0.10"
@@ -32,6 +39,10 @@ owo-colors = "4.3.0"
 # kmiri
 kmiri-helper = { path = "../kmiri-helper/", default-features = false }
 basic-toml = "0.1.10"
+socket2 = "0.6.5"
+
+# Only used by priroda binary.
+emmy_dap_types = { version = "0.2.0", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -44,13 +55,18 @@ ratatui = "0.30"
 tui-overlay = "0.1.2"
 humansize = "2.1.3"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-nix = { version = "0.30.1", features = ["mman", "ptrace", "signal"], optional = true }
+[target.'cfg(all(target_os = "linux", target_env = "gnu", any(target_arch = "x86", target_arch = "x86_64")))'.dependencies]
+nix = { version = "0.31.0", features = ["mman", "ptrace", "signal"], optional = true }
 ipc-channel = { version = "0.22.0", optional = true }
 capstone = { version = "0.14", features = ["arch_x86", "full"], default-features = false, optional = true}
 
-[target.'cfg(all(target_os = "linux", target_pointer_width = "64", target_endian = "little"))'.dependencies]
+[target.'cfg(all(any(target_os = "linux", target_os = "macos"), target_pointer_width = "64", target_endian = "little"))'.dependencies]
 genmc-sys = { path = "./genmc-sys/", version = "0.1.0", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Storage_FileSystem",
+] }
 
 [dev-dependencies]
 ui_test = "0.30.2"
@@ -68,14 +84,20 @@ rustc_private = true
 name = "ui"
 harness = false
 
+[[test]]
+name = "priroda"
+path = "priroda/tests/ui.rs"
+harness = false
+required-features = ["priroda"]
+
 [features]
 default = ["stack-cache", "native-lib", "kmiri"]
 genmc = ["dep:genmc-sys"]
 stack-cache = []
 expensive-consistency-checks = ["stack-cache"]
 tracing = ["dep:serde_json"]
+priroda = ["dep:emmy_dap_types"]
 native-lib = ["dep:libffi", "dep:libloading", "dep:capstone", "dep:ipc-channel", "dep:nix", "dep:serde"]
-jemalloc = []
 check_only = ["libffi?/check_only", "capstone?/check_only", "genmc-sys?/check_only"]
 kmiri = ["dep:serde_json", "dep:serde"]
 

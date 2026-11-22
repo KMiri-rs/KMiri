@@ -230,12 +230,12 @@ where
 }
 
 /// For the intrinsics:
-/// - sinf32, sinf64, sinhf, sinh
-/// - cosf32, cosf64, coshf, cosh
+/// - sin, sinhf, sinh
+/// - cos, coshf, cosh
 /// - tanhf, tanh, atanf, atan, atan2f, atan2
-/// - expf32, expf64, exp2f32, exp2f64
-/// - logf32, logf64, log2f32, log2f64, log10f32, log10f64
-/// - powf32, powf64
+/// - exp, exp2
+/// - log, log2, log10
+/// - powf
 /// - erff, erf, erfcf, erfc
 /// - hypotf, hypot
 ///
@@ -269,7 +269,7 @@ pub(crate) fn fixed_float_value<S: Semantics>(
 where
     IeeeFloat<S>: IeeeExt,
 {
-    let this = ecx.eval_context_mut();
+    let ecx = ecx.eval_context_mut();
     let one = IeeeFloat::<S>::one();
     let two = IeeeFloat::<S>::two();
     let three = IeeeFloat::<S>::three();
@@ -329,22 +329,22 @@ where
 
         // 1^y = 1 for any y, even a NaN
         ("pow", [base, exp]) if *base == one => {
-            let rng = this.machine.rng.get_mut();
+            let rng = ecx.machine.rng.get_mut();
             // SNaN exponents get special treatment: they might return 1, or a NaN.
             // This is non-deterministic because LLVM can treat SNaN as QNaN, and because
             // implementation behavior differs between glibc and musl.
-            let return_nan = exp.is_signaling() && this.machine.float_nondet && rng.random();
-            if return_nan { this.generate_nan(args) } else { one }
+            let return_nan = exp.is_signaling() && ecx.machine.float_nondet && rng.random();
+            if return_nan { ecx.generate_nan(args) } else { one }
         }
 
         // x^(±0) = 1 for any x, even a NaN
         ("pow", [base, exp]) if exp.is_zero() => {
-            let rng = this.machine.rng.get_mut();
+            let rng = ecx.machine.rng.get_mut();
             // SNaN bases get special treatment: they might return 1, or a NaN.
             // This is non-deterministic because LLVM can treat SNaN as QNaN, and because
             // implementation behavior differs between glibc and musl.
-            let return_nan = base.is_signaling() && this.machine.float_nondet && rng.random();
-            if return_nan { this.generate_nan(args) } else { one }
+            let return_nan = base.is_signaling() && ecx.machine.float_nondet && rng.random();
+            if return_nan { ecx.generate_nan(args) } else { one }
         }
 
         // There are a lot of cases for fixed outputs according to the C Standard, but these are
@@ -460,15 +460,15 @@ pub(crate) fn sqrt<F: Float>(x: F) -> F {
 }
 
 pub fn sqrt_op<'tcx, F: Float + FloatConvert<F> + Into<Scalar>>(
-    this: &mut MiriInterpCx<'tcx>,
+    ecx: &mut MiriInterpCx<'tcx>,
     f: &OpTy<'tcx>,
-    dest: &MPlaceTy<'tcx>,
+    dest: &PlaceTy<'tcx>,
 ) -> InterpResult<'tcx> {
-    let f: F = this.read_scalar(f)?.to_float()?;
+    let f: F = ecx.read_scalar(f)?.to_float()?;
     // Sqrt is specified to be fully precise.
     let res = math::sqrt(f);
-    let res = this.adjust_nan(res, &[f]);
-    this.write_scalar(res, dest)
+    let res = ecx.adjust_nan(res, &[f]);
+    ecx.write_scalar(res, dest)
 }
 
 pub trait HostFloatOperation {
@@ -533,17 +533,17 @@ pub enum HostUnaryFloatOp {
 }
 
 pub fn host_unary_float_op<'tcx, S: Semantics>(
-    this: &mut MiriInterpCx<'tcx>,
+    ecx: &mut MiriInterpCx<'tcx>,
     f: &OpTy<'tcx>,
     op: HostUnaryFloatOp,
-    dest: &MPlaceTy<'tcx>,
+    dest: &PlaceTy<'tcx>,
 ) -> InterpResult<'tcx>
 where
     IeeeFloat<S>: HostFloatOperation + IeeeExt + Float + Into<Scalar>,
 {
     use HostFloatOperation;
 
-    let f: IeeeFloat<S> = this.read_scalar(f)?.to_float()?;
+    let f: IeeeFloat<S> = ecx.read_scalar(f)?.to_float()?;
 
     // The fixed-value and clamping functions need the name as a string.
     let name = match op {
@@ -555,7 +555,7 @@ where
         HostUnaryFloatOp::Log10 => "log10",
         HostUnaryFloatOp::Log2 => "log2",
     };
-    let res = math::fixed_float_value(this, name, &[f]).unwrap_or_else(|| {
+    let res = math::fixed_float_value(ecx, name, &[f]).unwrap_or_else(|| {
         // Using host floats (but it's fine, these operations do not have
         // guaranteed precision).
         let res = match op {
@@ -570,15 +570,15 @@ where
 
         // Apply a relative error of 4ULP to introduce some non-determinism
         // simulating imprecise implementations and optimizations.
-        let res = math::apply_random_float_error_ulp(this, res, 4);
+        let res = math::apply_random_float_error_ulp(ecx, res, 4);
 
         // Clamp the result to the guaranteed range of this function according to the C standard,
         // if any.
         math::clamp_float_value(name, res)
     });
 
-    let res = this.adjust_nan(res, &[f]);
-    this.write_scalar(res, dest)?;
+    let res = ecx.adjust_nan(res, &[f]);
+    ecx.write_scalar(res, dest)?;
     interp_ok(())
 }
 

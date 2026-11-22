@@ -14,27 +14,19 @@ extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_interface;
 extern crate rustc_log;
+extern crate rustc_metadata;
 extern crate rustc_middle;
 extern crate rustc_public;
 extern crate rustc_session;
 extern crate rustc_span;
+extern crate rustc_structures;
 
-/// See docs in https://github.com/rust-lang/rust/blob/HEAD/compiler/rustc/src/main.rs
-/// and https://github.com/rust-lang/rust/pull/146627 for why we need this.
-///
-/// FIXME(madsmtm): This is loaded from the sysroot that was built with the other `rustc` crates
-/// above, instead of via Cargo as you'd normally do. This is currently needed for LTO due to
-/// https://github.com/rust-lang/cc-rs/issues/1613.
-#[cfg(feature = "jemalloc")]
-// Make sure `--all-features` works: only Linux and macOS actually use jemalloc, and not on arm32.
-#[cfg(all(
-    any(target_os = "linux", target_os = "macos"),
-    any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64"),
-))]
-extern crate tikv_jemalloc_sys as _;
+// Override the C allocator in the same way that the `rustc` binary would do.
+rustc_driver::override_c_allocator_in_binary!();
 
 mod log;
 
+use std::any::Any;
 use std::env;
 use std::fs::File;
 use std::num::{NonZero, NonZeroI32};
@@ -50,6 +42,7 @@ use miri::{
     run_genmc_mode,
 };
 use rustc_codegen_ssa::traits::CodegenBackend;
+use rustc_codegen_ssa::{CompiledModules, CrateInfo, TargetConfig};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_data_structures::sync::{self, DynSync};
 use rustc_driver::Compilation;
@@ -61,19 +54,25 @@ use rustc_interface::interface::Config;
 use rustc_interface::util::DummyCodegenBackend;
 use rustc_log::tracing::debug;
 use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
-use rustc_middle::middle::exported_symbols::{
-    ExportedSymbol, SymbolExportInfo, SymbolExportKind, SymbolExportLevel,
-};
+use rustc_middle::middle::exported_symbols::ExportedSymbol;
 use rustc_middle::query::LocalCrate;
 use rustc_middle::ty::{self, TyCtxt};
-use rustc_session::config::{CrateType, ErrorOutputType, OptLevel};
-use rustc_session::{EarlyDiagCtxt, Session};
+use rustc_session::config::{ErrorOutputType, OptLevel};
+use rustc_session::{EarlyDiagCtxt, EarlySession, Session};
+use rustc_structures::CrateType;
 
 use crate::log::setup::{deinit_loggers, init_early_loggers, init_late_loggers};
 
 struct MiriCompilerCalls {
     miri_config: Option<MiriConfig>,
     many_seeds: Option<ManySeedsConfig>,
+}
+
+struct MiriCodegenBackend {
+    native: Box<dyn CodegenBackend>,
+    dummy: DummyCodegenBackend,
+    /// Whether we are in a dependency or in the to-be-interpreted binary crate
+    dep: bool,
 }
 
 struct ManySeedsConfig {
@@ -207,8 +206,11 @@ fn run_many_seeds(
     let exit_code =
         sync::IntoDynSyncSend(AtomicU32::new(rustc_driver::EXIT_SUCCESS.cast_unsigned()));
     let num_failed = sync::IntoDynSyncSend(AtomicU32::new(0));
-    sync::par_for_each_in(many_seeds.seeds.clone(), |&seed| {
-        if let Err(return_code) = eval_entry_once(seed.into()) {
+
+    let range = &many_seeds.seeds;
+    let range = range.start as usize..range.end as usize;
+    sync::par_range(range, |seed| {
+        if let Err(return_code) = eval_entry_once(seed as u64) {
             eprintln!("FAILING SEED: {seed}");
             if !many_seeds.keep_going {
                 // `abort_if_errors` would unwind but would not actually stop miri, since
@@ -235,39 +237,27 @@ fn run_many_seeds(
 /// Generates the codegen backend for code that Miri will interpret: we basically
 /// use the dummy backend, except that we put the LLVM backend in charge of
 /// target features.
-fn make_miri_codegen_backend(sess: &Session) -> Box<dyn CodegenBackend> {
+fn make_miri_codegen_backend(sess: &EarlySession, dep: bool) -> Box<dyn CodegenBackend> {
     let early_dcx = EarlyDiagCtxt::new(sess.opts.error_format);
 
     // Use the target_config method of the default codegen backend (eg LLVM) to ensure the
     // calculated target features match said backend by respecting eg -Ctarget-cpu.
-    let target_config_backend = rustc_interface::util::get_codegen_backend(
+    let mut native_codegen_backend = rustc_interface::util::get_codegen_backend(
         &early_dcx,
         &sess.opts.sysroot,
         None,
         &sess.target,
     );
-    target_config_backend.init(sess);
+    let _ = native_codegen_backend.init(sess);
 
-    Box::new(DummyCodegenBackend {
-        target_config_override: Some(Box::new(move |sess| {
-            let mut cfg = target_config_backend.target_config(sess);
-            // The basic types and ABI always work.
-            cfg.has_reliable_f16 = true;
-            cfg.has_reliable_f128 = true;
-            // We always provide the f16 intrinsics, but some are provided via the host,
-            // so forward its reliability.
-            cfg.has_reliable_f16_math = cfg!(target_has_reliable_f16_math);
-            // Many f128 operations are still missing.
-            cfg.has_reliable_f128_math = false;
-            cfg
-        })),
-    })
+    Box::new(MiriCodegenBackend { native: native_codegen_backend, dummy: DummyCodegenBackend, dep })
 }
 
 impl rustc_driver::Callbacks for MiriCompilerCalls {
     fn config(&mut self, config: &mut rustc_interface::interface::Config) {
         // We never reach codegen anyway.
-        config.make_codegen_backend = Some(Box::new(make_miri_codegen_backend));
+        config.make_codegen_backend =
+            Some(Box::new(|sess| make_miri_codegen_backend(sess, /* dep */ false)));
 
         // Register our custom extra symbols.
         config.extra_symbols = miri::sym::EXTRA_SYMBOLS.into();
@@ -299,7 +289,10 @@ impl rustc_driver::Callbacks for MiriCompilerCalls {
             let mut config =
                 self.miri_config.take().expect("after_analysis must only be called once");
             // Add filename to `miri` arguments.
-            config.args.insert(0, tcx.sess.io.input.filestem().to_string());
+            let file_name = tcx.sess.io.input.file_name(tcx.sess);
+            config.args.insert(0, file_name.prefer_local_unconditionally().to_string());
+            // And configure the executable.
+            config.current_exe = file_name.into_local_path().and_then(|p| p.canonicalize().ok());
 
             // Adjust working directory for interpretation.
             if let Some(cwd) = env::var_os("MIRI_CWD") {
@@ -352,13 +345,75 @@ impl rustc_driver::Callbacks for MiriCompilerCalls {
                 tcx.dcx().abort_if_errors();
                 exit(return_code.get());
             } else {
-                exit(rustc_driver::EXIT_SUCCESS);
+                // We want to continue here so rustc can do its usual shutdown and finalize the
+                // incremental session. Our custom codegen backend ensures nothing actually happens.
+                Compilation::Continue
             }
-
-            // Unreachable.
         };
 
         rustc_public::rustc_internal::run(tcx, cb).unwrap()
+    }
+}
+
+impl CodegenBackend for MiriCodegenBackend {
+    fn name(&self) -> &'static str {
+        "miri"
+    }
+
+    fn target_config(&self, sess: &EarlySession) -> TargetConfig {
+        let native_target_config = self.native.target_config(sess);
+        TargetConfig {
+            internal_target_features: native_target_config.internal_target_features,
+
+            // The basic types and ABI always work.
+            has_reliable_f16b: true,
+            has_reliable_f16: true,
+            has_reliable_f128: true,
+            // We always provide the f16 intrinsics, but some are provided via the host,
+            // so forward its reliability.
+            has_reliable_f16_math: cfg!(target_has_reliable_f16_math),
+            // Many f128 operations are still missing.
+            has_reliable_f128_math: false,
+        }
+    }
+
+    fn target_cpu(&self, _sess: &Session) -> String {
+        String::new()
+    }
+
+    // Everything complicated is forwarded to the dummy backend.
+
+    fn supported_crate_types(&self, sess: &Session) -> Vec<CrateType> {
+        self.dummy.supported_crate_types(sess)
+    }
+
+    fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Box<dyn Any> {
+        self.dummy.codegen_crate(tcx)
+    }
+
+    fn join_codegen(
+        &self,
+        ongoing_codegen: Box<dyn Any>,
+        sess: &Session,
+        incr_comp_session: Option<&rustc_session::IncrCompSession>,
+        outputs: &rustc_session::config::OutputFilenames,
+        crate_info: &CrateInfo,
+    ) -> (CompiledModules, rustc_middle::dep_graph::WorkProductMap) {
+        self.dummy.join_codegen(ongoing_codegen, sess, incr_comp_session, outputs, crate_info)
+    }
+
+    fn link(
+        &self,
+        sess: &Session,
+        compiled_modules: CompiledModules,
+        crate_info: CrateInfo,
+        metadata: rustc_metadata::EncodedMetadata,
+        outputs: &rustc_session::config::OutputFilenames,
+    ) {
+        // In the binary this should do nothing.
+        if self.dep {
+            self.dummy.link(sess, compiled_modules, crate_info, metadata, outputs)
+        }
     }
 }
 
@@ -369,7 +424,8 @@ impl rustc_driver::Callbacks for MiriDepCompilerCalls {
     #[allow(rustc::potential_query_instability)] // rustc_codegen_ssa (where this code is copied from) also allows this lint
     fn config(&mut self, config: &mut Config) {
         // We don't need actual codegen, we just emit an rlib that Miri can later consume.
-        config.make_codegen_backend = Some(Box::new(make_miri_codegen_backend));
+        config.make_codegen_backend =
+            Some(Box::new(|sess| make_miri_codegen_backend(sess, /* dep */ true)));
 
         // Avoid warnings about unsupported crate types. However, only do that we we are *not* being
         // queried by cargo about the supported crate types so that cargo still receives the
@@ -393,58 +449,14 @@ impl rustc_driver::Callbacks for MiriDepCompilerCalls {
         // Queries overridden here affect the data stored in `rmeta` files of dependencies,
         // which will be used later in non-`MIRI_BE_RUSTC` mode.
         config.override_queries = Some(|_, local_providers| {
-            // We need to add #[used] symbols to exported_symbols for `lookup_link_section`.
-            // FIXME handle this somehow in rustc itself to avoid this hack.
-            local_providers.queries.exported_non_generic_symbols = |tcx, LocalCrate| {
-                let reachable_set = tcx.with_stable_hashing_context(|mut hcx| {
-                    tcx.reachable_set(()).to_sorted(&mut hcx, true)
-                });
-                tcx.arena.alloc_from_iter(
-                    // This is based on:
-                    // https://github.com/rust-lang/rust/blob/2962e7c0089d5c136f4e9600b7abccfbbde4973d/compiler/rustc_codegen_ssa/src/back/symbol_export.rs#L62-L63
-                    // https://github.com/rust-lang/rust/blob/2962e7c0089d5c136f4e9600b7abccfbbde4973d/compiler/rustc_codegen_ssa/src/back/symbol_export.rs#L174
-                    reachable_set.into_iter().filter_map(|&local_def_id| {
-                        // Do the same filtering that rustc does:
-                        // https://github.com/rust-lang/rust/blob/2962e7c0089d5c136f4e9600b7abccfbbde4973d/compiler/rustc_codegen_ssa/src/back/symbol_export.rs#L84-L102
-                        // Otherwise it may cause unexpected behaviours and ICEs
-                        // (https://github.com/rust-lang/rust/issues/86261).
-                        let is_reachable_non_generic = matches!(
-                            tcx.hir_node_by_def_id(local_def_id),
-                            Node::Item(&hir::Item {
-                                kind: hir::ItemKind::Static(..) | hir::ItemKind::Fn{ .. },
-                                ..
-                            }) | Node::ImplItem(&hir::ImplItem {
-                                kind: hir::ImplItemKind::Fn(..),
-                                ..
-                            })
-                            if !tcx.generics_of(local_def_id).requires_monomorphization(tcx)
-                        );
-                        if !is_reachable_non_generic {
-                            return None;
-                        }
-                        let codegen_fn_attrs = tcx.codegen_fn_attrs(local_def_id);
-                        if codegen_fn_attrs.contains_extern_indicator()
-                            || codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::USED_COMPILER)
-                            || codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::USED_LINKER)
-                        {
-                            Some((
-                                ExportedSymbol::NonGeneric(local_def_id.to_def_id()),
-                                // Some dummy `SymbolExportInfo` here. We only use
-                                // `exported_symbols` in shims/foreign_items.rs and the export info
-                                // is ignored.
-                                SymbolExportInfo {
-                                    level: SymbolExportLevel::C,
-                                    kind: SymbolExportKind::Text,
-                                    used: false,
-                                    rustc_std_internal_symbol: false,
-                                },
-                            ))
-                        } else {
-                            None
-                        }
-                    }),
-                )
-            }
+            // `exported_non_generic_symbols` is usually empty because we don't codegen anything.
+            // However, we need it for `lookup_link_section`.
+            // So overwrite the query with a version that dooes something even without codegen.
+            local_providers.queries.exported_non_generic_symbols =
+                |tcx, LocalCrate| rustc_codegen_ssa::back::exported_non_generic_symbols_helper(tcx);
+            // `exported_non_generic_symbols_helper` calls `reachable_non_generics`.
+            local_providers.queries.reachable_non_generics =
+                |tcx, LocalCrate| rustc_codegen_ssa::back::reachable_non_generics_helper(tcx);
         });
 
         // Register our custom extra symbols.
@@ -502,8 +514,9 @@ fn run_compiler_and_exit(
     rustc_driver::install_ctrlc_handler();
 
     // Invoke compiler, catch any unwinding panics and handle return code.
-    let exit_code =
-        rustc_driver::catch_with_exit_code(move || rustc_driver::run_compiler(args, callbacks));
+    let exit_code = rustc_driver::catch_with_exit_code(move || {
+        rustc_driver::compiler_entrypoint(args, callbacks)
+    });
     exit(if exit_code == ExitCode::SUCCESS {
         rustc_driver::EXIT_SUCCESS
     } else {
@@ -612,8 +625,6 @@ fn main() -> ExitCode {
                 Some(BorrowTrackerMethod::TreeBorrows(TreeBorrowsParams {
                     precise_interior_mut: true,
                     implicit_writes: false,
-                    // We default this to "unique" for now to keep the design space open.
-                    box_custom_allocator_unique: true,
                 }));
         } else if arg == "-Zmiri-tree-borrows-no-precise-interior-mut" {
             match &mut miri_config.borrow_tracker {
@@ -633,16 +644,6 @@ fn main() -> ExitCode {
                 _ =>
                     fatal_error!(
                         "`-Zmiri-tree-borrows` is required before `-Zmiri-tree-borrows-implicit-writes`"
-                    ),
-            };
-        } else if arg == "-Zmiri-tree-borrows-relax-custom-allocator-uniqueness" {
-            match &mut miri_config.borrow_tracker {
-                Some(BorrowTrackerMethod::TreeBorrows(params)) => {
-                    params.box_custom_allocator_unique = false;
-                }
-                _ =>
-                    fatal_error!(
-                        "`-Zmiri-tree-borrows` is required before `-Zmiri-tree-borrows-relax-custom-allocator-uniqueness`"
                     ),
             };
         } else if arg == "-Zmiri-disable-data-race-detector" {
@@ -905,4 +906,6 @@ fn main() -> ExitCode {
     }
     let _diagnostics_file = diagnostics_file;
     run_compiler_and_exit(&rustc_args, &mut MiriCompilerCalls::new(miri_config, many_seeds))
+    // Note that we *cannot* just return here, in native-lib mode we have to coordinate
+    // with the supervisor process!
 }

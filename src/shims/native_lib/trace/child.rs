@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::panic::abort_on_unwind;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
@@ -82,14 +83,13 @@ impl Supervisor {
                     .map(move |i| start.strict_add(i.strict_mul(page_size)))
             })
             .collect();
-        let raw_stack_ptr: *mut [u8; CALLBACK_STACK_SIZE] =
-            Box::leak(Box::new([0u8; CALLBACK_STACK_SIZE])).as_mut_ptr().cast();
+        let raw_stack_ptr: *mut [u8; CALLBACK_STACK_SIZE] = Box::into_raw(Box::new([0; _]));
         let stack_ptr = raw_stack_ptr.expose_provenance();
         let start_info = StartFfiInfo { page_ptrs, stack_ptr };
 
         // Unwinding might be messed up due to partly protected memory, so let's abort if something
         // breaks inside here.
-        let res = std::panic::abort_unwind(|| {
+        let res = abort_on_unwind(|| {
             // Send over the info.
             // NB: if we do not wait to receive a blank confirmation response, it is
             // possible that the supervisor is alerted of the SIGSTOP *before* it has

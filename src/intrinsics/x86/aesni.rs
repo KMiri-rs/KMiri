@@ -11,8 +11,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         args: &[OpTy<'tcx>],
         dest: &MPlaceTy<'tcx>,
     ) -> InterpResult<'tcx, EmulateItemResult> {
-        let this = self.eval_context_mut();
-        this.expect_target_feature_for_intrinsic(link_name, "aes")?;
+        let ecx = self.eval_context_mut();
+        ecx.expect_target_feature_for_intrinsic(link_name, "aes")?;
         // Prefix should have already been checked.
         let unprefixed_name = link_name.as_str().strip_prefix("llvm.x86.aesni.").unwrap();
 
@@ -23,8 +23,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // `state` with the corresponding 128-bit key of `key`.
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_aesdec_si128
             "aesdec" | "aesdec.256" | "aesdec.512" => {
-                let [state, key] = this.check_shim_sig_unadjusted(link_name, args)?;
-                aes_round(this, state, key, dest, |state, key| {
+                let [state, key] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
+                aes_round(ecx, state, key, dest, |state, key| {
                     let key = aes::Block::from(key.to_le_bytes());
                     let mut state = aes::Block::from(state.to_le_bytes());
                     // `aes::hazmat::equiv_inv_cipher_round` documentation states that
@@ -39,9 +39,9 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // `state` with the corresponding 128-bit key of `key`.
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_aesdeclast_si128
             "aesdeclast" | "aesdeclast.256" | "aesdeclast.512" => {
-                let [state, key] = this.check_shim_sig_unadjusted(link_name, args)?;
+                let [state, key] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
 
-                aes_round(this, state, key, dest, |state, key| {
+                aes_round(ecx, state, key, dest, |state, key| {
                     let mut state = aes::Block::from(state.to_le_bytes());
                     // `aes::hazmat::equiv_inv_cipher_round` does the following operations:
                     // state = InvShiftRows(state)
@@ -63,8 +63,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // `state` with the corresponding 128-bit key of `key`.
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_aesenc_si128
             "aesenc" | "aesenc.256" | "aesenc.512" => {
-                let [state, key] = this.check_shim_sig_unadjusted(link_name, args)?;
-                aes_round(this, state, key, dest, |state, key| {
+                let [state, key] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
+                aes_round(ecx, state, key, dest, |state, key| {
                     let key = aes::Block::from(key.to_le_bytes());
                     let mut state = aes::Block::from(state.to_le_bytes());
                     // `aes::hazmat::cipher_round` documentation states that
@@ -79,8 +79,8 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // `state` with the corresponding 128-bit key of `key`.
             // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_aesenclast_si128
             "aesenclast" | "aesenclast.256" | "aesenclast.512" => {
-                let [state, key] = this.check_shim_sig_unadjusted(link_name, args)?;
-                aes_round(this, state, key, dest, |state, key| {
+                let [state, key] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
+                aes_round(ecx, state, key, dest, |state, key| {
                     let mut state = aes::Block::from(state.to_le_bytes());
                     // `aes::hazmat::cipher_round` does the following operations:
                     // state = ShiftRows(state)
@@ -99,19 +99,32 @@ pub(super) trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             // Used to implement the _mm_aesimc_si128 function.
             // Performs the AES InvMixColumns operation on `op`
             "aesimc" => {
-                let [op] = this.check_shim_sig_unadjusted(link_name, args)?;
+                let [op] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
                 // Transmute to `u128`
-                let op = op.transmute(this.machine.layouts.u128, this)?;
-                let dest = dest.transmute(this.machine.layouts.u128, this)?;
+                let op = op.transmute(ecx.machine.layouts.u128, ecx)?;
+                let dest = dest.transmute(ecx.machine.layouts.u128, ecx)?;
 
-                let state = this.read_scalar(&op)?.to_u128()?;
+                let state = ecx.read_scalar(&op)?.to_u128()?;
                 let mut state = aes::Block::from(state.to_le_bytes());
                 aes::hazmat::inv_mix_columns(&mut state);
 
-                this.write_scalar(Scalar::from_u128(u128::from_le_bytes(state.into())), &dest)?;
+                ecx.write_scalar(Scalar::from_u128(u128::from_le_bytes(state.into())), &dest)?;
             }
-            // TODO: Implement the `llvm.x86.aesni.aeskeygenassist` when possible
-            // with an external crate.
+            // Used to implement the _mm_aeskeygenassist_si128 function.
+            // Assists in expanding the AES cipher key.
+            "aeskeygenassist" => {
+                let [ckey, rcon] = ecx.check_shim_sig_llvm_intrinsic(link_name, args)?;
+                // Transmute `__m128i` to `u128`.
+                let ckey = ckey.transmute(ecx.machine.layouts.u128, ecx)?;
+                let dest = dest.transmute(ecx.machine.layouts.u128, ecx)?;
+
+                let rcon = ecx.read_scalar(rcon)?.to_u8()?;
+                let ckey = ecx.read_scalar(&ckey)?.to_u128()?;
+
+                let res = aeskeygenassist(ckey, rcon);
+
+                ecx.write_scalar(Scalar::from_u128(res), &dest)?;
+            }
             _ => return interp_ok(EmulateItemResult::NotSupported),
         }
         interp_ok(EmulateItemResult::NeedsReturn)
@@ -151,4 +164,37 @@ fn aes_round<'tcx>(
     }
 
     interp_ok(())
+}
+
+/// AES Key Generation Assist
+///
+/// From [Intel Intrinsics Guide][1]:
+/// ```text
+/// X3[31:0] := a[127:96]
+/// X2[31:0] := a[95:64]
+/// X1[31:0] := a[63:32]
+/// X0[31:0] := a[31:0]
+/// RCON[31:0] := ZeroExtend32(imm8[7:0])
+/// dst[31:0] := SubWord(X1)
+/// dst[63:32] := RotWord(SubWord(X1)) XOR RCON
+/// dst[95:64] := SubWord(X3)
+/// dst[127:96] := RotWord(SubWord(X3)) XOR RCON
+/// ```
+///
+/// [1]: https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_aeskeygenassist_si128
+#[expect(clippy::as_conversions, reason = "deliberately truncating")]
+fn aeskeygenassist(a: u128, rcon: u8) -> u128 {
+    use crate::intrinsics::math::aes::sub_word;
+
+    let rcon = u32::from(rcon);
+    // TODO: use `truncate` method on stabilization
+    let x1 = (a >> 32) as u32;
+    let x3 = (a >> 96) as u32;
+
+    let x0 = sub_word(x1);
+    let x1 = x0.rotate_right(8) ^ rcon;
+    let x2 = sub_word(x3);
+    let x3 = x2.rotate_right(8) ^ rcon;
+
+    (u128::from(x3) << 96) | (u128::from(x2) << 64) | (u128::from(x1) << 32) | u128::from(x0)
 }

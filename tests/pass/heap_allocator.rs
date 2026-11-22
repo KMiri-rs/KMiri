@@ -1,4 +1,7 @@
-#![feature(allocator_api, slice_ptr_get)]
+//@revisions: default symbolic
+//@[symbolic]compile-flags: -Zmiri-symbolic-alignment-check
+
+#![feature(slice_ptr_get)]
 
 use std::alloc::{Allocator, Global, Layout, System};
 use std::ptr::NonNull;
