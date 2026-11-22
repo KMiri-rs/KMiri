@@ -1709,7 +1709,18 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
             Some(_) => ecx.machine.extern_statics_imports.get(&link_name),
         };
         if let Some(&ptr) = ptr {
-            ecx.check_shim_symbol_clash(link_name)?;
+            // kmiri: `link_rust_extern_statics` also puts statics defined in Rust in this map,
+            // under their own name. Such an entry is that definition, not a shim, so it does
+            // not clash with it.
+            let is_rust_definition =
+                ecx.lookup_exported_symbol(link_name)?.is_some_and(|instance| {
+                    matches!(ecx.tcx.def_kind(instance.def_id()), DefKind::Static { .. })
+                        && ptr.provenance.get_alloc_id()
+                            == Some(ecx.tcx.reserve_and_set_static_alloc(instance.def_id()))
+                });
+            if !is_rust_definition {
+                ecx.check_shim_symbol_clash(link_name)?;
+            }
             // Various parts of the engine rely on `get_alloc_info` for size and alignment
             // information. That uses the type information of this static.
             // Make sure it matches the Miri allocation for this.
