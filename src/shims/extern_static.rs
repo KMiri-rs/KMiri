@@ -48,59 +48,6 @@ impl<'tcx> MiriMachine<'tcx> {
         interp_ok(())
     }
 
-    /// Resolves every `extern` static declared in Rust to the exported static of the
-    /// same name defined elsewhere in the program, as the linker does. Kernels rely on
-    /// this: OSTD declares its global allocators this way and the crate that picks the
-    /// allocator defines them; OSDK generates the ktest whitelists that OSTD declares.
-    /// Declarations without a Rust definition are left alone (other shims may provide
-    /// them, or the access is reported as unsupported).
-    fn link_rust_extern_statics(ecx: &mut MiriInterpCx<'tcx>) -> InterpResult<'tcx> {
-        let tcx = ecx.tcx.tcx;
-        let mut names: Vec<Symbol> = Vec::new();
-        for cnum in
-            std::iter::once(rustc_hir::def_id::LOCAL_CRATE).chain(tcx.crates(()).iter().copied())
-        {
-            for module in tcx.foreign_modules(cnum).values() {
-                for &def_id in &module.foreign_items {
-                    // Thread-local statics are per thread, not one shared allocation.
-                    if !matches!(tcx.def_kind(def_id), rustc_hir::def::DefKind::Static { .. })
-                        || tcx.is_thread_local_static(def_id)
-                    {
-                        continue;
-                    }
-                    let instance = rustc_middle::ty::Instance::mono(tcx, def_id);
-                    let name = Symbol::intern(tcx.symbol_name(instance).name);
-                    if !names.contains(&name) {
-                        names.push(name);
-                    }
-                }
-            }
-        }
-        for link_name in names {
-            if ecx.machine.extern_statics.contains_key(&link_name) {
-                continue;
-            }
-            let Some(instance) = ecx.lookup_exported_symbol(link_name)? else {
-                continue;
-            };
-            if !matches!(tcx.def_kind(instance.def_id()), rustc_hir::def::DefKind::Static { .. })
-                || tcx.is_thread_local_static(instance.def_id())
-            {
-                continue;
-            }
-            // Neither load the static's MIR nor `eval_global` it: both need its
-            // `mir_for_ctfe`, which a dependency crate does not provide. In the full
-            // kernel the allocators live in `aster_core`, and this ICEd with
-            // "does not have a mir_for_ctfe". Refer to the static the same way an
-            // ordinary `static` access does instead.
-            let alloc_id = tcx.reserve_and_set_static_alloc(instance.def_id());
-            let ptr =
-                ecx.global_root_pointer(rustc_middle::mir::interpret::Pointer::from(alloc_id))?;
-            ecx.machine.extern_statics.insert(link_name, ptr);
-        }
-        interp_ok(())
-    }
-
     /// Sets up the "extern statics" for this machine.
     pub fn init_extern_statics(ecx: &mut MiriInterpCx<'tcx>) -> InterpResult<'tcx> {
         if ecx.target_os_is_unix() {
@@ -110,8 +57,6 @@ impl<'tcx> MiriMachine<'tcx> {
             // We also provide it as a weak symbol, which is needed on FreeBSD.
             Self::add_weak_symbol(ecx, "environ", environ)?;
         }
-
-        Self::link_rust_extern_statics(ecx)?;
 
         match &ecx.tcx.sess.target.os {
             Os::Linux => {
