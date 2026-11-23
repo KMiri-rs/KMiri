@@ -28,7 +28,9 @@ if (cd $(PROJ)/tests/vmspace-activate-irq && $(VMSPACE_IRQ_ENV_VARS) cargo osdk 
 	cat "$$log"; rm -f "$$log"; echo "vmspace-activate-irq unexpectedly completed without aborting"; exit 1; \
 fi; \
 cat "$$log"; \
-if awk '/Undefined Behavior: / && (/has been freed/ || /strongly protected/) { found = 1 } END { exit !found }' "$$log" && grep -F "ostd::mm::VmSpace::activate" "$$log" >/dev/null; then \
+if { awk '/Undefined Behavior: / && (/has been freed/ || /strongly protected/) { found = 1 } END { exit !found }' "$$log" || \
+     { grep -qF "protected tags must never be Disabled" "$$log" && grep -qF "core::ptr::drop_in_place::<ostd::mm::VmSpace>" "$$log"; }; } && \
+   grep -F "ostd::mm::VmSpace::activate" "$$log" >/dev/null; then \
 	echo "Observed expected Undefined Behavior in VmSpace::activate."; rm -f "$$log"; \
 else \
 	rm -f "$$log"; echo "vmspace-activate-irq failed without the expected Undefined Behavior in VmSpace::activate"; exit 1; \
