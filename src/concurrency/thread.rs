@@ -468,6 +468,8 @@ pub struct ThreadManager<'tcx> {
     next_cpu: Option<usize>,
     /// An array stores the mapping between CPU number and the `ThreadId`.
     cpu_to_threads: Vec<Option<ThreadId>>,
+    /// The context each CPU started in (its boot context), once started.
+    cpu_boot_threads: Vec<Option<ThreadId>>,
     /// An array stores the base virtual address of cpu local variables for each CPU.
     pub cpu_local_base: Vec<usize>,
     /// Threads used in the program.
@@ -570,12 +572,15 @@ impl<'tcx> ThreadManager<'tcx> {
         // Only CPU 0 runs at reset; the others start with `kern_miri_start_cpu`.
         let mut cpu_to_threads = vec![None; num_cpus];
         cpu_to_threads[0] = Some(ThreadId::MAIN_THREAD);
+        let mut cpu_boot_threads = vec![None; num_cpus];
+        cpu_boot_threads[0] = Some(ThreadId::MAIN_THREAD);
         // The CPU-local base register holds its reset value 0 until the kernel's boot
         // code sets it (`kern_miri_set_cpu_local_base`), as on hardware.
         let cpu_local_base = vec![0; num_cpus];
         Self {
             active_thread: ThreadId::MAIN_THREAD,
             cpu_to_threads,
+            cpu_boot_threads,
             cpu_local_base,
             active_cpu: 0,
             next_cpu: None,
@@ -632,15 +637,24 @@ impl<'tcx> ThreadManager<'tcx> {
         self.cpu_to_threads[cpu].is_some()
     }
 
-    /// Whether a CPU other than CPU 0 is still running a context.
-    pub fn other_cpu_running(&self) -> bool {
-        self.cpu_to_threads[1..].iter().flatten().any(|&t| !self.threads[t].state.is_terminated())
+    /// Whether a CPU other than CPU 0 still holds a live context: the one it is
+    /// running, or its boot context. A CPU stops when the context it runs returns
+    /// with no successor, but its boot context may still be suspended in a switch
+    /// to a task; on hardware that CPU idles with its stack intact until power-off.
+    pub fn other_cpu_live(&self) -> bool {
+        (1..self.num_cpus()).any(|cpu| {
+            self.cpu_to_threads[cpu]
+                .iter()
+                .chain(self.cpu_boot_threads[cpu].iter())
+                .any(|&t| !self.threads[t].state.is_terminated())
+        })
     }
 
     /// Makes `thread` the context that CPU `cpu` runs from now on.
     pub fn start_cpu(&mut self, cpu: usize, thread: ThreadId) {
         assert!(self.cpu_to_threads[cpu].is_none());
         self.cpu_to_threads[cpu] = Some(thread);
+        self.cpu_boot_threads[cpu] = Some(thread);
     }
 
     /// The started CPUs, other than the active one, whose current context can take a step.
