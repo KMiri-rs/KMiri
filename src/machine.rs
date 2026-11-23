@@ -1709,18 +1709,7 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
             Some(_) => ecx.machine.extern_statics_imports.get(&link_name),
         };
         if let Some(&ptr) = ptr {
-            // kmiri: `link_rust_extern_statics` also puts statics defined in Rust in this map,
-            // under their own name. Such an entry is that definition, not a shim, so it does
-            // not clash with it.
-            let is_rust_definition =
-                ecx.lookup_exported_symbol(link_name)?.is_some_and(|instance| {
-                    matches!(ecx.tcx.def_kind(instance.def_id()), DefKind::Static { .. })
-                        && ptr.provenance.get_alloc_id()
-                            == Some(ecx.tcx.reserve_and_set_static_alloc(instance.def_id()))
-                });
-            if !is_rust_definition {
-                ecx.check_shim_symbol_clash(link_name)?;
-            }
+            ecx.check_shim_symbol_clash(link_name)?;
             // Various parts of the engine rely on `get_alloc_info` for size and alignment
             // information. That uses the type information of this static.
             // Make sure it matches the Miri allocation for this.
@@ -1761,17 +1750,8 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
                     .extern_static_weak_import_default
                     .expect("`missing_weak_symbol` should have been initialized"),
             )
-        } else if let Some(&addr) = ecx.machine.foreign_symbol_addr_map.get(&link_name) {
-            // Linker-script symbols (e.g. `_sstack`, `_stext`) are declared as `extern static`
-            // in Rust but are never backed by an allocation — their *address* is the value.
-            // Return a Wildcard pointer at that address so that `addr_of!(_sstack)` yields the
-            // correct physical address while no concrete allocation is required.
-            interp_ok(interpret::Pointer::new(Provenance::Wildcard, Size::from_bytes(addr)))
-        } else {
-            // Look for a Rust static with this symbol name in the crate graph.
-            let Some(instance) = ecx.lookup_exported_static(link_name)? else {
-                throw_unsup_format!("extern static `{link_name}` is not supported by Miri");
-            };
+        } else if let Some(instance) = ecx.lookup_exported_static(link_name)? {
+            // A Rust static with this symbol name exists in the crate graph.
             // Evaluate the static to get its allocation.
             let place = ecx.eval_global(instance)?;
             let static_ptr = place.ptr().into_pointer_or_addr().unwrap();
@@ -1823,6 +1803,14 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
                 )
             }
             interp_ok(static_ptr)
+        } else if let Some(&addr) = ecx.machine.foreign_symbol_addr_map.get(&link_name) {
+            // Linker-script symbols (e.g. `_sstack`, `_stext`) are declared as `extern static`
+            // in Rust but are never backed by an allocation — their *address* is the value.
+            // Return a Wildcard pointer at that address so that `addr_of!(_sstack)` yields the
+            // correct physical address while no concrete allocation is required.
+            interp_ok(interpret::Pointer::new(Provenance::Wildcard, Size::from_bytes(addr)))
+        } else {
+            throw_unsup_format!("extern static `{link_name}` is not supported by Miri");
         }
     }
 
