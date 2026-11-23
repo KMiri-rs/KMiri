@@ -3,7 +3,7 @@ use std::{fs, io};
 use serde::Deserialize;
 
 use crate::KMiriConfigToml;
-use crate::mirch::try_kernel_code_vaddr_to_paddr;
+use crate::mirch::{config_cpu_local_size, try_kernel_code_vaddr_to_paddr};
 
 /// Parses a JSON configuration file into a `PhysConfig` structure.
 pub fn parse_json_file(file_path: &str) -> Result<PhysConfig, io::Error> {
@@ -99,7 +99,7 @@ impl PhysConfig {
             total_mem_size: 0x800_0000,
             kernel_code_size: 0x100_0000,
             kernel_static_size: 0x3f_0000,
-            cpu_local_size: 0x1_0000,
+            cpu_local_size: config_cpu_local_size() as usize,
 
             // Size and base should align to 0x4000_0000
             kernel_code_base_vaddr: 0xffff_ffff_8000_0000,
@@ -107,8 +107,21 @@ impl PhysConfig {
         }
     }
 
+    /// The size of the kernel code section for a CPU-local section of `cpu_local_size`
+    /// bytes. The kernel stack section, right after the CPU-local section, keeps its size.
+    pub fn kernel_code_size_for(cpu_local_size: usize) -> usize {
+        let default = Self::default();
+        default.kernel_code_size - default.cpu_local_size + cpu_local_size
+    }
+
     pub fn new_with_toml(toml: &KMiriConfigToml) -> Self {
-        let mut config = Self { total_mem_size: toml.total_mem_size() as usize, ..Self::default() };
+        let cpu_local_size = toml.cpu_local_size() as usize;
+        let mut config = Self {
+            total_mem_size: toml.total_mem_size() as usize,
+            kernel_code_size: Self::kernel_code_size_for(cpu_local_size),
+            cpu_local_size,
+            ..Self::default()
+        };
         if !toml.page_table_enabled() {
             // Allocation lookup uses physical addresses without page tables. Give
             // interpreter-created Rust allocations matching identity addresses too.
@@ -183,7 +196,6 @@ pub fn total_page_num() -> usize {
 
 // Kernel code section accessors
 /// Returns starting physical address of kernel code (always 0x0)
-#[expect(unused)]
 pub const fn kernel_code_start() -> usize {
     0
 }
@@ -228,11 +240,12 @@ pub fn cpu_local_end_addr() -> usize {
 
 /// Linker-script symbols that KMiri provides itself, because KMiri lays out the
 /// sections they bound. `[layout]` entries in `kmiri.toml` take precedence.
-pub const BUILTIN_LAYOUT_SYMBOLS: [&str; 2] = ["__cpu_local_start", "__cpu_local_end"];
+pub const BUILTIN_LAYOUT_SYMBOLS: [&str; 4] =
+    ["__cpu_local_start", "__cpu_local_end", "__kernel_start", "__kernel_end"];
 
 /// Physical addresses of [`BUILTIN_LAYOUT_SYMBOLS`], in the same order.
-pub fn builtin_layout_symbol_paddrs() -> [usize; 2] {
-    [cpu_local_start_addr(), cpu_local_end_addr()]
+pub fn builtin_layout_symbol_paddrs() -> [usize; 4] {
+    [cpu_local_start_addr(), cpu_local_end_addr(), kernel_code_start(), kernel_code_end()]
 }
 
 // Kernel stack accessors

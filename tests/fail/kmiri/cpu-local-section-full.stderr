@@ -1,0 +1,12 @@
+error: unsupported operation: the CPU-local section is full: a variable of size $HEX and alignment $HEX needs a section of at least $HEX bytes, but `cpu_local_size` is $HEX; increase `cpu_local_size` in the KMiri config
+  --> tests/fail/kmiri/cpu-local-section-full.rs:LL:CC
+   |
+LL |     let _ = &BIG as *const Big as usize;
+   |              ^^^ unsupported operation occurred here
+   |
+   = help: this is likely not a bug in the program; it indicates that the program performed an operation that Miri does not support
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+

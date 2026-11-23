@@ -61,6 +61,22 @@ else \
 fi
 endef
 
+# A 96 KiB CPU-local variable runs with the larger `cpu_local_size` in the test's
+# `kmiri.toml`, and is reported with the size to set under the default 64 KiB.
+define RUN_CPU_LOCAL_LARGE_SECTION_TEST
+(cd $(PROJ)/tests/cpu-local-large-section && OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/cpu-local-large-section/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows" cargo osdk miri test); \
+log=$$(mktemp); \
+if (cd $(PROJ)/tests/cpu-local-large-section && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
+	cat "$$log"; rm -f "$$log"; echo "cpu-local-large-section unexpectedly fit in the default section"; exit 1; \
+fi; \
+cat "$$log"; \
+if grep -q "the CPU-local section is full" "$$log"; then \
+	echo "Observed expected CPU-local section diagnostic."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "cpu-local-large-section failed without the expected diagnostic"; exit 1; \
+fi
+endef
+
 # Runs the ktests of tests/ktest-runner through tool/ktest-sweep.py and checks
 # that each one gets the expected result, including the test after the one that
 # hits Undefined Behavior.
@@ -123,7 +139,7 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    irq-simulation irq-trap-path irq-rcu-uaf \
                    irq-rcu-uaf-lifo heap-box-drop \
                    vmspace-activate-irq vmspace-activate-irq-control \
-                   smp-ap-tasks smp-data-race
+                   smp-ap-tasks smp-data-race cpu-local-large-section
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -139,6 +155,8 @@ asterinas-test-all: install install-osdk
 			($(RUN_SMP_AP_TASKS_TEST)); \
 		elif [ "$${test}" = smp-data-race ]; then \
 			$(RUN_SMP_DATA_RACE_TEST); \
+		elif [ "$${test}" = cpu-local-large-section ]; then \
+			$(RUN_CPU_LOCAL_LARGE_SECTION_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \

@@ -344,6 +344,22 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let base_vaddr =
                     next_vaddr.checked_add(slack).ok_or_else(|| err_exhaust!(AddressSpaceFull))?;
                 let base_vaddr = align_addr(base_vaddr, info.align.bytes());
+                if ecx.machine.cpu_local_alloc_set.borrow().contains(&alloc_id) {
+                    let end = base_vaddr
+                        .checked_add(info.size.bytes().max(1))
+                        .ok_or_else(|| err_exhaust!(AddressSpaceFull))?;
+                    if end > limit {
+                        let start = kernel_code_paddr_to_vaddr(mirch::cpu_local_start_addr());
+                        let needed =
+                            (end - start as u64).next_multiple_of(mirch::page_size() as u64);
+                        throw_unsup_format!(
+                            "the CPU-local section is full: a variable of size {:#x} and alignment {:#x} needs a section of at least {needed:#x} bytes, but `cpu_local_size` is {:#x}; increase `cpu_local_size` in the KMiri config",
+                            info.size.bytes(),
+                            info.align.bytes(),
+                            mirch::cpu_local_segment_size(),
+                        );
+                    }
+                }
                 if base_vaddr >= limit {
                     log!(
                         "[addr_from_alloc_id_uncached - error] `base_addr={base_vaddr:#x} >= limit={limit:#x}` makes AddressSpaceFull",
@@ -789,10 +805,12 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             let var_vaddr = this.addr_from_alloc_id(var_id, Some(MiriMemoryKind::Global.into()))?;
             let var_paddr = this.machine.alloc_addresses.borrow().get_base_addr(var_id) as usize;
             let offset = var_paddr - section_start;
+            // The copy keeps the variable's alignment only up to the page size. A stricter
+            // one must not move it: a reference to the misaligned copy is what is wrong.
             this.kernel_allocation_at(
                 dst_paddr + offset,
                 info.size.bytes_usize(),
-                info.align.bytes_usize(),
+                info.align.bytes_usize().min(page_size),
             );
             this.mem_copy(
                 interpret::Pointer::new(Some(Provenance::Wildcard), Size::from_bytes(var_vaddr)),

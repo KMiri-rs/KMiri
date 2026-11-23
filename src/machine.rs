@@ -959,7 +959,8 @@ impl<'tcx> MiriMachine<'tcx> {
                     })
                     .unwrap_or_default();
                 // KMiri places `.cpu_local` statics in its own CPU-local section
-                // (`alloc_addresses`), so it plays the linker for the section bounds too.
+                // (`alloc_addresses`) and lays out the kernel code section, so it plays
+                // the linker for the bounds of both.
                 for (name, paddr) in
                     mirch::BUILTIN_LAYOUT_SYMBOLS.into_iter().zip(mirch::builtin_layout_symbol_paddrs())
                 {
