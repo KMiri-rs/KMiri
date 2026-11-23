@@ -805,10 +805,12 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             let var_vaddr = this.addr_from_alloc_id(var_id, Some(MiriMemoryKind::Global.into()))?;
             let var_paddr = this.machine.alloc_addresses.borrow().get_base_addr(var_id) as usize;
             let offset = var_paddr - section_start;
+            // The copy keeps the variable's alignment only up to the page size. A stricter
+            // one must not move it: a reference to the misaligned copy is what is wrong.
             this.kernel_allocation_at(
                 dst_paddr + offset,
                 info.size.bytes_usize(),
-                info.align.bytes_usize(),
+                info.align.bytes_usize().min(page_size),
             );
             this.mem_copy(
                 interpret::Pointer::new(Some(Provenance::Wildcard), Size::from_bytes(var_vaddr)),
