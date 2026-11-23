@@ -4,6 +4,8 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use super::config::{PhysConfig, page_size};
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct KMiriConfigToml {
     #[serde(default = "config_page_table")]
@@ -13,6 +15,10 @@ pub struct KMiriConfigToml {
     /// The upper limit of a spawned non-main thread.
     #[serde(default = "config_stack_mem_size")]
     stack_mem_size: u64,
+    /// The size of the CPU-local section, in bytes: a multiple of the page size.
+    /// The kernel code section grows with it, so the kernel stack section keeps its size.
+    #[serde(default = "config_cpu_local_size")]
+    cpu_local_size: u64,
     /// Linker-script / `extern` symbols that should keep a fixed address.
     /// Unknown `extern fn` symbols are rejected unless listed here (KMiri#76).
     /// The value is a physical address.
@@ -153,6 +159,23 @@ impl KMiriConfigToml {
                 path.display()
             ));
         }
+        let size = config.cpu_local_size;
+        if size == 0 || !size.is_multiple_of(page_size() as u64) {
+            return Err(format!(
+                "invalid `cpu_local_size` in `{}`: expected a non-zero multiple of {:#x}",
+                path.display(),
+                page_size()
+            ));
+        }
+        if size != config_cpu_local_size()
+            && (size >= config.total_mem_size
+                || PhysConfig::kernel_code_size_for(size as usize) as u64 >= config.total_mem_size)
+        {
+            return Err(format!(
+                "invalid `cpu_local_size` in `{}`: the kernel code section would not fit in `total_mem_size`",
+                path.display()
+            ));
+        }
         Ok(config)
     }
 
@@ -162,6 +185,10 @@ impl KMiriConfigToml {
 
     pub fn stack_mem_size(&self) -> u64 {
         self.stack_mem_size
+    }
+
+    pub fn cpu_local_size(&self) -> u64 {
+        self.cpu_local_size
     }
 
     pub fn page_table_enabled(&self) -> bool {
@@ -201,6 +228,10 @@ fn config_page_table() -> bool {
 
 pub fn config_stack_mem_size() -> u64 {
     0x4000 // 16 KB
+}
+
+pub const fn config_cpu_local_size() -> u64 {
+    0x1_0000 // 64 KB
 }
 
 #[derive(Clone, Debug, Deserialize)]
