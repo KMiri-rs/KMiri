@@ -46,6 +46,15 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     ) -> InterpResult<'tcx, Option<ty::Instance<'tcx>>> {
         let ecx = self.eval_context_mut();
 
+        // kmiri: a volatile access through an address that lands on untyped
+        // pages, which hold raw bytes rather than an interpreter allocation.
+        if ecx.machine.kmiri_toml.is_some()
+            && crate::mirch::volatile_on_untyped(ecx, instance, args, dest)?
+        {
+            ecx.return_to_block(ret)?;
+            return interp_ok(None);
+        }
+
         // See if the core engine can handle this intrinsic.
         if ecx.eval_intrinsic(instance, args, dest, ret)? {
             return interp_ok(None);

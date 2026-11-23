@@ -75,7 +75,7 @@ pub struct GlobalStateInner {
     /// into `AllocExtra` for the same reason as `base_addr`.
     pub exposed: FxHashSet<AllocId>,
     /// The provenance to use for int2ptr casts
-    provenance_mode: ProvenanceMode,
+    pub provenance_mode: ProvenanceMode,
     /// The generator for new addresses in a given range, and a pool for address reuse. This is
     /// `None` if addresses are generated elsewhere (in native-lib mode or with GenMC).
     address_generation: Option<(AddressGenerator, ReusePool)>,
