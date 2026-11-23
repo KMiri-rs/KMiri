@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rustc_abi::{Align, Size};
 use rustc_middle::mir::interpret::{CheckInAllocMsg, alloc_range};
-use rustc_middle::ty::Mutability;
+use rustc_middle::ty::{self, Mutability};
 
 use super::PageTable;
 use super::config::*;
@@ -736,4 +736,96 @@ impl TypedKind {
             _ => None,
         }
     }
+}
+
+/// Whether an access of `len` bytes through `ptr` lands on untyped pages: the
+/// pointer has no allocation's provenance, an access through a pointer cast
+/// from its address would find no allocation, and the address maps to an
+/// untyped page.
+fn on_untyped_page<'tcx>(this: &MiriInterpCx<'tcx>, ptr: Pointer, len: usize) -> bool {
+    if matches!(ptr.provenance, Some(Provenance::Concrete { .. }))
+        || len == 0
+        || physical_mem().page_states.is_empty()
+    {
+        return false;
+    }
+    let wildcard = Pointer::new(Some(Provenance::Wildcard), ptr.addr());
+    if this.ptr_try_get_alloc_id(wildcard, len as i64).is_ok() {
+        return false;
+    }
+    let Some(paddr) = this.kernel_vaddr_to_paddr(ptr.addr().bytes()) else {
+        return false;
+    };
+    physical_mem().page_states.get(paddr as usize / page_size()) == Some(&PageState::Untyped)
+}
+
+/// Performs the volatile intrinsic `instance` if its pointer lands on untyped
+/// pages (see `on_untyped_page`), and returns whether it did. Such pages hold
+/// raw bytes, not an interpreter allocation, so the access goes through
+/// `kernel_copy` with a temporary allocation on the other side: the
+/// initialization state moves byte by byte, pointer provenance does not (raw
+/// bytes cannot hold it), and a range that leaves the untyped pages is reported
+/// by `kernel_copy`. Reading uninitialized bytes into a typed value is then
+/// reported when the value is copied out, as for any other load.
+pub fn volatile_on_untyped<'tcx>(
+    this: &mut MiriInterpCx<'tcx>,
+    instance: ty::Instance<'tcx>,
+    args: &[OpTy<'tcx>],
+    dest: &PlaceTy<'tcx>,
+) -> InterpResult<'tcx, bool> {
+    let kind = MiriMemoryKind::Machine.into();
+    let name = this.tcx.item_name(instance.def_id());
+    match name.as_str() {
+        name @ ("volatile_load" | "unaligned_volatile_load") => {
+            let [ptr] = args else { return interp_ok(false) };
+            let ptr = this.read_pointer(ptr)?;
+            if !on_untyped_page(this, ptr, dest.layout.size.bytes_usize()) {
+                return interp_ok(false);
+            }
+            if name == "volatile_load" {
+                this.check_ptr_align(ptr, dest.layout.align)?;
+            }
+            let tmp = this.allocate(dest.layout, kind)?;
+            kernel_copy(this, tmp.ptr(), ptr, dest.layout.size.bytes_usize())?;
+            this.copy_op(&tmp, dest)?;
+            this.deallocate_ptr(tmp.ptr(), None, kind)?;
+        }
+        name @ ("volatile_store" | "unaligned_volatile_store") => {
+            let [ptr, val] = args else { return interp_ok(false) };
+            let ptr = this.read_pointer(ptr)?;
+            if !on_untyped_page(this, ptr, val.layout.size.bytes_usize()) {
+                return interp_ok(false);
+            }
+            if name == "volatile_store" {
+                this.check_ptr_align(ptr, val.layout.align)?;
+            }
+            let tmp = this.allocate(val.layout, kind)?;
+            this.copy_op(val, &tmp)?;
+            kernel_copy(this, ptr, tmp.ptr(), val.layout.size.bytes_usize())?;
+            this.deallocate_ptr(tmp.ptr(), None, kind)?;
+        }
+        "volatile_set_memory" => {
+            let [ptr, byte, count] = args else { return interp_ok(false) };
+            let layout = this.layout_of(instance.args.type_at(0))?;
+            let ptr = this.read_pointer(ptr)?;
+            let byte = this.read_scalar(byte)?.to_u8()?;
+            let count = this.read_target_usize(count)?;
+            let Some(len) = layout.size.bytes().checked_mul(count) else {
+                throw_ub_format!("overflow computing total size of `volatile_set_memory`");
+            };
+            let len = usize::try_from(len).unwrap();
+            if !on_untyped_page(this, ptr, len) {
+                return interp_ok(false);
+            }
+            this.check_ptr_align(ptr, layout.align)?;
+            let size = Size::from_bytes(len as u64);
+            let tmp: Pointer =
+                this.allocate_ptr(size, Align::ONE, kind, AllocInit::Uninit)?.into();
+            this.write_bytes_ptr(tmp, std::iter::repeat_n(byte, len))?;
+            kernel_copy(this, ptr, tmp, len)?;
+            this.deallocate_ptr(tmp, None, kind)?;
+        }
+        _ => return interp_ok(false),
+    }
+    interp_ok(true)
 }
