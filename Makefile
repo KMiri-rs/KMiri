@@ -46,6 +46,11 @@ define RUN_SMP_AP_TASKS_TEST
 cd $(PROJ)/tests/smp-ap-tasks && $(SMP_ENV_VARS) cargo osdk miri test
 endef
 
+# An AP whose last task returns stops; its boot context is not a leak.
+define RUN_SMP_AP_TASK_RETURNS_TEST
+cd $(PROJ)/tests/smp-ap-task-returns && $(SMP_ENV_VARS) cargo osdk miri test
+endef
+
 # Both sides of the reported race must be the unsynchronized `+= 1` on the
 # counter, which the diagnostic quotes once for each side.
 define RUN_SMP_DATA_RACE_TEST
@@ -139,7 +144,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    irq-simulation irq-trap-path irq-rcu-uaf \
                    irq-rcu-uaf-lifo heap-box-drop \
                    vmspace-activate-irq vmspace-activate-irq-control \
-                   smp-ap-tasks smp-data-race cpu-local-large-section
+                   smp-ap-tasks smp-ap-task-returns smp-data-race \
+                   cpu-local-large-section
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -153,6 +159,8 @@ asterinas-test-all: install install-osdk
 			($(RUN_VMSPACE_ACTIVATE_IRQ_CONTROL_TEST)); \
 		elif [ "$${test}" = smp-ap-tasks ]; then \
 			($(RUN_SMP_AP_TASKS_TEST)); \
+		elif [ "$${test}" = smp-ap-task-returns ]; then \
+			($(RUN_SMP_AP_TASK_RETURNS_TEST)); \
 		elif [ "$${test}" = smp-data-race ]; then \
 			$(RUN_SMP_DATA_RACE_TEST); \
 		elif [ "$${test}" = cpu-local-large-section ]; then \
