@@ -746,7 +746,9 @@ fn on_untyped_page<'tcx>(this: &MiriInterpCx<'tcx>, ptr: Pointer, len: usize) ->
     if matches!(ptr.provenance, Some(Provenance::Concrete { .. }))
         || len == 0
         || physical_mem().page_states.is_empty()
+        || this.machine.alloc_addresses.borrow().provenance_mode == ProvenanceMode::Strict
     {
+        // With strict provenance an address cannot name memory at all.
         return false;
     }
     let wildcard = Pointer::new(Some(Provenance::Wildcard), ptr.addr());
@@ -818,6 +820,11 @@ pub fn volatile_on_untyped<'tcx>(
                 return interp_ok(false);
             }
             this.check_ptr_align(ptr, layout.align)?;
+            // Bound the temporary buffer before allocating it (`kernel_copy`
+            // would reject the length only afterwards).
+            if len > total_mem_size() {
+                throw_unsup_format!("volatile_set_memory larger than physical memory");
+            }
             let size = Size::from_bytes(len as u64);
             let tmp: Pointer =
                 this.allocate_ptr(size, Align::ONE, kind, AllocInit::Uninit)?.into();
