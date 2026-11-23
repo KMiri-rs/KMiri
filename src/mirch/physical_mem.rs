@@ -826,8 +826,7 @@ pub fn volatile_on_untyped<'tcx>(
                 throw_unsup_format!("volatile_set_memory larger than physical memory");
             }
             let size = Size::from_bytes(len as u64);
-            let tmp: Pointer =
-                this.allocate_ptr(size, Align::ONE, kind, AllocInit::Uninit)?.into();
+            let tmp: Pointer = this.allocate_ptr(size, Align::ONE, kind, AllocInit::Uninit)?.into();
             this.write_bytes_ptr(tmp, std::iter::repeat_n(byte, len))?;
             kernel_copy(this, ptr, tmp, len)?;
             this.deallocate_ptr(tmp, None, kind)?;

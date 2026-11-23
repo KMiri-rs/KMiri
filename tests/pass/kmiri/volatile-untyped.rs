@@ -51,7 +51,8 @@ fn main() {
         assert_eq!((&raw const local).read_volatile(), 7);
 
         let mut exposed = 0u64;
-        let w = core::ptr::with_exposed_provenance_mut::<u64>((&raw mut exposed).expose_provenance());
+        let w =
+            core::ptr::with_exposed_provenance_mut::<u64>((&raw mut exposed).expose_provenance());
         w.write_volatile(9);
         assert_eq!(w.read_volatile(), 9);
         assert_eq!(exposed, 9);
