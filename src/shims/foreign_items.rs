@@ -1106,6 +1106,13 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     }
                 }
             }
+            // The size of the machine's RAM, which starts at physical address 0: what a
+            // firmware memory map reports to the kernel.
+            "kern_miri_ram_size" => {
+                let [] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let size = mirch::total_mem_size();
+                ecx.write_scalar(Scalar::from_target_usize(size.try_into().unwrap(), ecx), dest)?;
+            }
             "kern_miri_cpu_count" => {
                 let [] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
                 let num_cpus = ecx.machine.threads.num_cpus();
