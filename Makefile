@@ -147,7 +147,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    irq-rcu-uaf-lifo heap-box-drop \
                    vmspace-activate-irq vmspace-activate-irq-control \
                    smp-ap-tasks smp-ap-task-returns smp-data-race \
-                   cpu-local-large-section
+                   cpu-local-large-section dyn-cpu-local tsc-read \
+                   irq-chip-pins
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -176,6 +177,25 @@ asterinas-test-all: install install-osdk
 .PHONY: asterinas-ktest-runner
 asterinas-ktest-runner: install install-osdk
 	$(RUN_KTEST_RUNNER_TEST)
+
+# Runs the full Asterinas kernel (`asterinas/kernel`, the real `#[ostd::main]`
+# entry) on the machine in tests/asterinas-kernel.toml. KMiri has no user mode
+# yet, so the kernel is expected to boot until it looks for an init process to
+# start, and to stop there.
+ASTERINAS_KERNEL_TOML := $(PROJ)/tests/asterinas-kernel.toml
+ASTERINAS_KERNEL_STOP := neither an initramfs init nor a usable root filesystem was available
+.PHONY: asterinas-kernel
+asterinas-kernel: install install-osdk
+	log=$$(mktemp); \
+	(cd $(PROJ)/asterinas/kernel && OSDK_LOCAL_DEV=1 VDSO_LIBRARY_DIR=$(PROJ)/env/linux_vdso \
+		MIRIFLAGS="-Zkmiri-toml=$(ASTERINAS_KERNEL_TOML) -Zmiri-permissive-provenance -Zmiri-tree-borrows" \
+		cargo osdk miri) >"$$log" 2>&1; \
+	cat "$$log"; \
+	if grep -F "$(ASTERINAS_KERNEL_STOP)" "$$log" >/dev/null; then \
+		echo "The kernel reached the expected stop: there is no init process to run."; rm -f "$$log"; \
+	else \
+		rm -f "$$log"; echo "the kernel stopped before it looked for an init process"; exit 1; \
+	fi
 
 TOCK_BOARD := $(PROJ)/tock/boards/qemu_rv64_virt
 .PHONY: tock
