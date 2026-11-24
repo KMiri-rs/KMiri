@@ -835,3 +835,12 @@ pub fn volatile_on_untyped<'tcx>(
     }
     interp_ok(true)
 }
+
+/// Whether the kernel virtual address `vaddr` maps, through the current page
+/// table, to a physical address outside RAM. KMiri models no device there.
+pub fn maps_outside_ram(vaddr: usize) -> bool {
+    let Some(page_table) = &physical_mem().page_table else {
+        return false;
+    };
+    page_table.page_walk(vaddr).is_some_and(|paddr| paddr >= total_mem_size())
+}

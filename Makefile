@@ -147,7 +147,7 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    irq-rcu-uaf-lifo heap-box-drop \
                    vmspace-activate-irq vmspace-activate-irq-control \
                    smp-ap-tasks smp-ap-task-returns smp-data-race \
-                   cpu-local-large-section
+                   cpu-local-large-section mmio-floating-bus
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
