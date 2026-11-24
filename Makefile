@@ -171,7 +171,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    frame-atomic-fallible frame-atomic-uninit \
                    segment-wrapped-size \
                    ram-size-small \
-                   mmio-floating-bus
+                   mmio-floating-bus \
+                   dyn-cpu-local
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
