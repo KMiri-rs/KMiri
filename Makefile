@@ -84,6 +84,21 @@ else \
 fi
 endef
 
+# A fallible atomic load of a never-written word on an untyped frame reads
+# uninitialized memory into a `u32`.
+define RUN_FRAME_ATOMIC_UNINIT_TEST
+log=$$(mktemp); \
+if (cd $(PROJ)/tests/frame-atomic-uninit && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
+	cat "$$log"; rm -f "$$log"; echo "frame-atomic-uninit unexpectedly completed without aborting"; exit 1; \
+fi; \
+cat "$$log"; \
+if grep -q "Undefined Behavior: .*memory is uninitialized" "$$log" && grep -qF "ostd::arch::mm::__atomic_load_fallible" "$$log"; then \
+	echo "Observed expected uninitialized read in the fallible atomic load."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "frame-atomic-uninit failed without the expected uninitialized read"; exit 1; \
+fi
+endef
+
 # Runs the ktests of tests/ktest-runner through tool/ktest-sweep.py and checks
 # that each one gets the expected result, including the test after the one that
 # hits Undefined Behavior.
@@ -147,7 +162,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    irq-rcu-uaf-lifo heap-box-drop \
                    vmspace-activate-irq vmspace-activate-irq-control \
                    smp-ap-tasks smp-ap-task-returns smp-data-race \
-                   cpu-local-large-section
+                   cpu-local-large-section \
+                   frame-atomic-fallible frame-atomic-uninit
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -167,6 +183,8 @@ asterinas-test-all: install install-osdk
 			$(RUN_SMP_DATA_RACE_TEST); \
 		elif [ "$${test}" = cpu-local-large-section ]; then \
 			$(RUN_CPU_LOCAL_LARGE_SECTION_TEST); \
+		elif [ "$${test}" = frame-atomic-uninit ]; then \
+			$(RUN_FRAME_ATOMIC_UNINIT_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
