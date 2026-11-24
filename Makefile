@@ -104,6 +104,23 @@ define RUN_RAM_SIZE_SMALL_TEST
 (cd $(PROJ)/tests/ram-size-small && OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/ram-size-small/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows" cargo osdk miri test)
 endef
 
+# The kernel drives the virtio block device of its own `kmiri.toml` with safe
+# code only, and makes it write an immutable static by DMA (Asterinas #3905).
+# A control read into DMA memory must succeed first; then KMiri must report the
+# write to read-only memory at the MMIO write that notifies the device.
+define RUN_DMA_IMMUTABLE_STATIC_TEST
+log=$$(mktemp); \
+if (cd $(PROJ)/tests/dma-immutable-static && OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/dma-immutable-static/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows" cargo osdk miri test) >"$$log" 2>&1; then \
+	cat "$$log"; rm -f "$$log"; echo "dma-immutable-static unexpectedly completed without aborting"; exit 1; \
+fi; \
+cat "$$log"; \
+if grep -qF "dma-immutable-static: control ok" "$$log" && grep -q "Undefined Behavior: writing to .* which is read-only" "$$log" && grep -qF "dma_immutable_static::Blk::read_sector" "$$log"; then \
+	echo "Observed expected DMA write to an immutable static."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "dma-immutable-static failed without the expected DMA write to read-only memory"; exit 1; \
+fi
+endef
+
 # Runs the ktests of tests/ktest-runner through tool/ktest-sweep.py and checks
 # that each one gets the expected result, including the test after the one that
 # hits Undefined Behavior.
@@ -172,7 +189,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    segment-wrapped-size \
                    ram-size-small \
                    mmio-floating-bus \
-                   dyn-cpu-local
+                   dyn-cpu-local \
+                   dma-immutable-static
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -196,6 +214,8 @@ asterinas-test-all: install install-osdk
 			$(RUN_FRAME_ATOMIC_UNINIT_TEST); \
 		elif [ "$${test}" = ram-size-small ]; then \
 			$(RUN_RAM_SIZE_SMALL_TEST); \
+		elif [ "$${test}" = dma-immutable-static ]; then \
+			$(RUN_DMA_IMMUTABLE_STATIC_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
