@@ -99,6 +99,11 @@ else \
 fi
 endef
 
+# The machine in `tests/ram-size-small/kmiri.toml` has 64 MiB of RAM.
+define RUN_RAM_SIZE_SMALL_TEST
+(cd $(PROJ)/tests/ram-size-small && OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/ram-size-small/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows" cargo osdk miri test)
+endef
+
 # Runs the ktests of tests/ktest-runner through tool/ktest-sweep.py and checks
 # that each one gets the expected result, including the test after the one that
 # hits Undefined Behavior.
@@ -164,7 +169,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    smp-ap-tasks smp-ap-task-returns smp-data-race \
                    cpu-local-large-section \
                    frame-atomic-fallible frame-atomic-uninit \
-                   segment-wrapped-size
+                   segment-wrapped-size \
+                   ram-size-small
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -186,6 +192,8 @@ asterinas-test-all: install install-osdk
 			$(RUN_CPU_LOCAL_LARGE_SECTION_TEST); \
 		elif [ "$${test}" = frame-atomic-uninit ]; then \
 			$(RUN_FRAME_ATOMIC_UNINIT_TEST); \
+		elif [ "$${test}" = ram-size-small ]; then \
+			$(RUN_RAM_SIZE_SMALL_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
