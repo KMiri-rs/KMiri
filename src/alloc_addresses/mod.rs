@@ -318,6 +318,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     throw_exhaust!(AddressSpaceFull);
                 }
                 *next_stack_vaddr = base_vaddr;
+                thread.live_stack_allocs.borrow_mut().insert(base_vaddr, alloc_id);
 
                 base_vaddr
             } else if ecx.machine.cpu_local_alloc_set.borrow().contains(&alloc_id)
@@ -1309,6 +1310,15 @@ impl<'tcx> MiriMachine<'tcx> {
         // We can also remove it from `exposed`, since this allocation can anyway not be returned by
         // `alloc_id_from_addr` any more.
         global_state.exposed.remove(&dead_id);
+        // Give the stack addresses of a dead stack variable back to its thread.
+        if kind == MemoryKind::Stack {
+            let vaddr = global_state
+                .paddr_to_vaddr
+                .get(&paddr)
+                .copied()
+                .unwrap_or_else(|| kernel_code_paddr_to_vaddr(paddr as usize) as u64);
+            self.threads.active_thread_mut().reclaim_stack_addr(vaddr, dead_id);
+        }
         // Also remember this address for future reuse.
         if let Some((_addr_gen, reuse)) = global_state.address_generation.as_mut() {
             let thread = self.threads.active_thread();
