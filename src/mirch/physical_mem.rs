@@ -8,6 +8,7 @@ use rustc_middle::ty::{self, Mutability};
 use super::PageTable;
 use super::config::*;
 use crate::alloc::MiriAllocParams;
+use crate::concurrency::VClock;
 use crate::mirch::config;
 use crate::*;
 
@@ -637,6 +638,10 @@ pub struct PhysicalMemory {
     /// `kern_miri_alloc_heap_slot`.
     pub pending_heap_slot_size: Option<usize>,
     pub page_table: Option<PageTable>,
+    /// For each physical address of untyped memory that an atomic access
+    /// (`kernel_atomic_u32`) has written, the clock its writers released, so
+    /// that later atomic accesses there synchronize with them as on hardware.
+    pub untyped_atomic_clocks: BTreeMap<u64, VClock>,
 }
 
 impl PhysicalMemory {
@@ -648,6 +653,7 @@ impl PhysicalMemory {
             free_slab_slots: BTreeSet::new(),
             pending_heap_slot_size: None,
             page_table: None,
+            untyped_atomic_clocks: BTreeMap::new(),
         }
     }
 
@@ -669,6 +675,7 @@ impl PhysicalMemory {
             free_slab_slots: BTreeSet::new(),
             pending_heap_slot_size: None,
             page_table: None,
+            untyped_atomic_clocks: BTreeMap::new(),
         }
     }
 }
@@ -834,4 +841,74 @@ pub fn volatile_on_untyped<'tcx>(
         _ => return interp_ok(false),
     }
     interp_ok(true)
+}
+
+/// Performs a sequentially consistent atomic load (`cmpxchg` is `None`) or
+/// compare-exchange (`Some((expected, new))`) of the `u32` at `ptr`, as one
+/// step of the machine, and returns the value read.
+///
+/// If `ptr` names an interpreter allocation (by its provenance, or because an
+/// access through a pointer cast from its address would find one), this is an
+/// ordinary atomic access, with Miri's checks for it (bounds, alignment, data
+/// races, and the aliasing model as far as the pointer's provenance allows).
+/// Otherwise, if the four bytes lie on untyped pages, they are read (and
+/// possibly written) through `kernel_copy`, like a volatile access there: the
+/// value must be initialized, and no data race is checked on raw bytes, as for
+/// any other access to untyped pages. The access still synchronizes like a
+/// sequentially consistent one: it acquires what earlier successful
+/// compare-exchanges of that physical address released, and a successful
+/// compare-exchange releases into it. Clocks are kept when a page is freed, so a
+/// reused page may synchronize more than on hardware; that can hide a data race
+/// but never report one that is not there.
+pub fn kernel_atomic_u32<'tcx>(
+    this: &mut MiriInterpCx<'tcx>,
+    ptr: Pointer,
+    cmpxchg: Option<(u32, u32)>,
+) -> InterpResult<'tcx, u32> {
+    let layout = this.machine.layouts.u32;
+    if on_untyped_page(this, ptr, 4) {
+        this.check_ptr_align(ptr, layout.align)?;
+        let paddr = this.kernel_vaddr_to_paddr(ptr.addr().bytes()).unwrap();
+        if let Some(clock) = physical_mem().untyped_atomic_clocks.get(&paddr).cloned() {
+            this.acquire_clock(&clock)?;
+        }
+        let kind = MiriMemoryKind::Machine.into();
+        let tmp = this.allocate(layout, kind)?;
+        kernel_copy(this, tmp.ptr(), ptr, 4)?;
+        let current = this.read_scalar(&tmp)?.to_u32()?;
+        if let Some((expected, new)) = cmpxchg
+            && current == expected
+        {
+            this.write_scalar(Scalar::from_u32(new), &tmp)?;
+            kernel_copy(this, ptr, tmp.ptr(), 4)?;
+            // A read-modify-write continues the release sequence: join, not replace.
+            this.release_clock(|clock| {
+                physical_mem_mut().untyped_atomic_clocks.entry(paddr).or_default().join(clock)
+            })?;
+        }
+        this.deallocate_ptr(tmp.ptr(), None, kind)?;
+        return interp_ok(current);
+    }
+    let ptr = if let Some(Provenance::Concrete { .. }) = ptr.provenance {
+        ptr
+    } else {
+        Pointer::new(Some(Provenance::Wildcard), ptr.addr())
+    };
+    let place = this.ptr_to_mplace(ptr, layout);
+    let current = match cmpxchg {
+        None => this.read_scalar_atomic(&place, AtomicReadOrd::SeqCst)?,
+        Some((expected, new)) => {
+            let expected = ImmTy::from_scalar(Scalar::from_u32(expected), layout);
+            this.atomic_compare_exchange(
+                &place,
+                &expected,
+                Scalar::from_u32(new),
+                AtomicRwOrd::SeqCst,
+                AtomicReadOrd::SeqCst,
+                false,
+            )?
+            .0
+        }
+    };
+    interp_ok(current.to_u32()?)
 }

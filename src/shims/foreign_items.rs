@@ -1401,6 +1401,23 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let len = ecx.read_target_usize(len)? as usize;
                 mirch::physical_copy(dst, src, len)?;
             }
+            // Atomic access to a kernel address that may name raw physical memory
+            // (the kernel's fallible atomics, e.g. on a futex word in a frame).
+            "kern_miri_atomic_load_u32" => {
+                let [ptr] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let ptr = ecx.read_pointer(ptr)?;
+                let value = mirch::kernel_atomic_u32(ecx, ptr, None)?;
+                ecx.write_scalar(Scalar::from_u32(value), dest)?;
+            }
+            "kern_miri_atomic_cmpxchg_u32" => {
+                let [ptr, expected, new] =
+                    ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let ptr = ecx.read_pointer(ptr)?;
+                let expected = ecx.read_scalar(expected)?.to_u32()?;
+                let new = ecx.read_scalar(new)?.to_u32()?;
+                let value = mirch::kernel_atomic_u32(ecx, ptr, Some((expected, new)))?;
+                ecx.write_scalar(Scalar::from_u32(value), dest)?;
+            }
             "kern_miri_copy" => {
                 let [dst, src, len] =
                     ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
