@@ -1,0 +1,5 @@
+total_mem_size = 0x08000000
+
+[virtio_blk]
+mmio_base = 0xfeb0_0000
+capacity_sectors = 8

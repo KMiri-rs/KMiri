@@ -5,6 +5,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use super::config::{PhysConfig, page_size};
+use super::virtio_blk::{VIRTIO_MMIO_WINDOW, VirtioBlkConfigToml};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct KMiriConfigToml {
@@ -45,6 +46,10 @@ pub struct KMiriConfigToml {
     /// Configuration for the simulated CPUs.
     #[serde(default)]
     smp: SmpConfigToml,
+    /// A virtio block device on the MMIO transport (`virtio_blk.rs`). Without
+    /// it, nothing is outside RAM.
+    #[serde(default)]
+    virtio_blk: Option<VirtioBlkConfigToml>,
 }
 
 /// Configuration for the simulated CPUs.
@@ -176,6 +181,17 @@ impl KMiriConfigToml {
                 path.display()
             ));
         }
+        if let Some(blk) = &config.virtio_blk
+            && (!config.page_table
+                || blk.mmio_base < config.total_mem_size
+                || !blk.mmio_base.is_multiple_of(VIRTIO_MMIO_WINDOW)
+                || blk.capacity_sectors.checked_mul(512).is_none_or(|size| size > config.total_mem_size))
+        {
+            return Err(format!(
+                "invalid `[virtio_blk]` in `{}`: the device needs `page_table = true`, `mmio_base` must be outside RAM and aligned to {VIRTIO_MMIO_WINDOW:#x}, and the disk no larger than RAM",
+                path.display()
+            ));
+        }
         Ok(config)
     }
 
@@ -217,6 +233,10 @@ impl KMiriConfigToml {
 
     pub fn smp(&self) -> &SmpConfigToml {
         &self.smp
+    }
+
+    pub fn virtio_blk(&self) -> Option<&VirtioBlkConfigToml> {
+        self.virtio_blk.as_ref()
     }
 }
 
