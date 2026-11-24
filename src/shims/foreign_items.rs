@@ -1400,6 +1400,49 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     throw_unsup_format!("`{link_name}`: unsupported access size {size}");
                 }
             }
+            // MMIO: one load or store of `size` bytes at a kernel virtual address.
+            // Natively a single `mov` goes to whatever decodes the physical address.
+            // KMiri models RAM only. An address that maps to RAM is accessed like any
+            // other memory, with all checks. Nothing is modelled outside RAM, so that
+            // bus floats, as for ports: a read returns all ones and a write is
+            // dropped, and drivers take their own "device absent" paths.
+            "kern_miri_mmio_read" | "kern_miri_mmio_write" => {
+                let is_read = link_name.as_str() == "kern_miri_mmio_read";
+                let (ptr, size, value) = if is_read {
+                    let [ptr, size] =
+                        ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                    (ptr, size, None)
+                } else {
+                    let [ptr, size, value] =
+                        ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                    (ptr, size, Some(value))
+                };
+                let ptr = ecx.read_pointer(ptr)?;
+                let size = ecx.read_target_usize(size)?;
+                if !matches!(size, 1 | 2 | 4 | 8) {
+                    throw_unsup_format!("`{link_name}`: unsupported access size {size}");
+                }
+                let layout = ecx.machine.layouts.uint(Size::from_bytes(size)).unwrap();
+                let floating = mirch::maps_outside_ram(ptr.addr().bytes() as usize);
+                match value {
+                    None => {
+                        let read = if floating {
+                            u128::MAX >> (128 - 8 * size)
+                        } else {
+                            let place = ecx.ptr_to_mplace(ptr, layout);
+                            ecx.read_scalar(&place)?.to_uint(layout.size)?
+                        };
+                        ecx.write_scalar(Scalar::from_u64(read as u64), dest)?;
+                    }
+                    Some(value) => {
+                        let value = ecx.read_scalar(value)?.to_u64()?;
+                        if !floating {
+                            let place = ecx.ptr_to_mplace(ptr, layout);
+                            ecx.write_scalar(Scalar::from_uint(value, layout.size), &place)?;
+                        }
+                    }
+                }
+            }
             "kern_miri_copy_untyped" => {
                 let [dst, src, len] =
                     ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
