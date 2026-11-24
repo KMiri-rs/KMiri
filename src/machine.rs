@@ -785,6 +785,9 @@ pub struct MiriMachine<'tcx> {
 
     pub kmiri_toml: Option<Box<KMiriConfigToml>>,
 
+    /// The virtio block device, if the KMiri config has one.
+    pub virtio_blk: RefCell<Option<mirch::VirtioBlk>>,
+
     /// Whether `exit` has been called (or, equivalently, `main` has returned).
     /// It is UB to call `exit` again.
     pub exit_called: bool,
@@ -970,6 +973,9 @@ impl<'tcx> MiriMachine<'tcx> {
                 map
             },
             kmiri_toml: config.kmiri_toml.as_ref().map(|val | Box::new( val.clone())),
+            virtio_blk: RefCell::new(
+                config.kmiri_toml.as_ref().and_then(|toml| toml.virtio_blk()).map(mirch::VirtioBlk::new),
+            ),
             reachable_function_instances: Default::default(),
             backtrace_style: config.backtrace_style,
             user_relevant_crates,

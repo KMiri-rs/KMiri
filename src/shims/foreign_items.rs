@@ -1402,10 +1402,12 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
             }
             // MMIO: one load or store of `size` bytes at a kernel virtual address.
             // Natively a single `mov` goes to whatever decodes the physical address.
-            // KMiri models RAM only. An address that maps to RAM is accessed like any
-            // other memory, with all checks. Nothing is modelled outside RAM, so that
-            // bus floats, as for ports: a read returns all ones and a write is
-            // dropped, and drivers take their own "device absent" paths.
+            // KMiri models RAM, and the devices that its config names. An address
+            // that maps to RAM is accessed like any other memory, with all checks.
+            // One in a device's register window is handled by the device. Nothing
+            // else is modelled outside RAM, so that bus floats, as for ports: a read
+            // returns all ones and a write is dropped, and drivers take their own
+            // "device absent" paths.
             "kern_miri_mmio_read" | "kern_miri_mmio_write" => {
                 let is_read = link_name.as_str() == "kern_miri_mmio_read";
                 let (ptr, size, value) = if is_read {
@@ -1423,10 +1425,20 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     throw_unsup_format!("`{link_name}`: unsupported access size {size}");
                 }
                 let layout = ecx.machine.layouts.uint(Size::from_bytes(size)).unwrap();
-                let floating = mirch::maps_outside_ram(ptr.addr().bytes() as usize);
+                let outside = mirch::outside_ram_paddr(ptr.addr().bytes() as usize);
+                let device = outside.and_then(|paddr| {
+                    ecx.machine.virtio_blk.borrow().as_ref()?.offset_of(paddr as u64)
+                });
+                if device.is_some_and(|offset| offset + size > mirch::VIRTIO_MMIO_WINDOW) {
+                    throw_unsup_format!("`{link_name}`: access crosses the end of a device's registers");
+                }
+                let floating = outside.is_some();
                 match value {
                     None => {
-                        let read = if floating {
+                        let read = if let Some(offset) = device {
+                            let mut blk = ecx.machine.virtio_blk.borrow_mut();
+                            blk.as_mut().unwrap().read(offset, size)?.into()
+                        } else if floating {
                             u128::MAX >> (128 - 8 * size)
                         } else {
                             let place = ecx.ptr_to_mplace(ptr, layout);
@@ -1436,7 +1448,14 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     }
                     Some(value) => {
                         let value = ecx.read_scalar(value)?.to_u64()?;
-                        if !floating {
+                        if let Some(offset) = device {
+                            // The device may access memory (DMA), so it is taken out of the
+                            // machine while it acts.
+                            let mut blk = ecx.machine.virtio_blk.borrow_mut().take().unwrap();
+                            let result = blk.write(ecx, offset, size, value);
+                            *ecx.machine.virtio_blk.borrow_mut() = Some(blk);
+                            result?;
+                        } else if !floating {
                             let place = ecx.ptr_to_mplace(ptr, layout);
                             ecx.write_scalar(Scalar::from_uint(value, layout.size), &place)?;
                         }

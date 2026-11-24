@@ -1267,6 +1267,19 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     }
 }
 
+/// Exposes the allocation `alloc_id` at `paddr`, if it is not exposed yet, so
+/// that an access through an address with no provenance finds it: a device
+/// reaches memory by physical address (`mirch::dma`).
+pub(crate) fn expose_allocation<'tcx>(
+    paddr: usize,
+    alloc_id: AllocId,
+    ecx: &InterpCx<'tcx, MiriMachine<'tcx>>,
+) {
+    if !ecx.machine.alloc_addresses.borrow().exposed.contains(&alloc_id) {
+        expose_tag(paddr, alloc_id, ecx);
+    }
+}
+
 fn expose_tag<'tcx>(paddr: usize, alloc_id: AllocId, ecx: &InterpCx<'tcx, MiriMachine<'tcx>>) {
     let Some(borrow_tracker) = ecx.machine.borrow_tracker.as_ref() else {
         // Without a borrow tracker (`-Zmiri-disable-stacked-borrows`) there is no

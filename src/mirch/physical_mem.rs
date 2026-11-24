@@ -913,11 +913,9 @@ pub fn kernel_atomic_u32<'tcx>(
     interp_ok(current.to_u32()?)
 }
 
-/// Whether the kernel virtual address `vaddr` maps, through the current page
-/// table, to a physical address outside RAM. KMiri models no device there.
-pub fn maps_outside_ram(vaddr: usize) -> bool {
-    let Some(page_table) = &physical_mem().page_table else {
-        return false;
-    };
-    page_table.page_walk(vaddr).is_some_and(|paddr| paddr >= total_mem_size())
+/// The physical address outside RAM that the kernel virtual address `vaddr`
+/// maps to through the current page table, if it maps to one.
+pub fn outside_ram_paddr(vaddr: usize) -> Option<usize> {
+    let page_table = physical_mem().page_table.as_ref()?;
+    page_table.page_walk(vaddr).filter(|&paddr| paddr >= total_mem_size())
 }
