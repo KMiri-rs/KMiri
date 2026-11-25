@@ -121,6 +121,23 @@ else \
 fi
 endef
 
+# Safe `IoMem<Insensitive>::read_once` with an unsupported 3-byte `PodOnce` type
+# reaches `core::hint::unreachable_unchecked` (Asterinas #3894).
+# A control 4-byte read/write must succeed first; then KMiri must report
+# entering unreachable code through `iomem_podonce_size::kernel_main`.
+define RUN_IOMEM_PODONCE_SIZE_TEST
+log=$$(mktemp); \
+if (cd $(PROJ)/tests/iomem-podonce-size && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
+	cat "$$log"; rm -f "$$log"; echo "iomem-podonce-size unexpectedly completed without aborting"; exit 1; \
+fi; \
+cat "$$log"; \
+if grep -qF "iomem-podonce-size: control ok" "$$log" && grep -qF "Undefined Behavior: entering unreachable code" "$$log" && grep -qF "iomem_podonce_size::kernel_main" "$$log"; then \
+	echo "Observed expected unreachable_unchecked UB for unsupported PodOnce size."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "iomem-podonce-size failed without the expected unreachable_unchecked UB"; exit 1; \
+fi
+endef
+
 # Runs the ktests of tests/ktest-runner through tool/ktest-sweep.py and checks
 # that each one gets the expected result, including the test after the one that
 # hits Undefined Behavior.
@@ -190,7 +207,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    ram-size-small \
                    mmio-floating-bus \
                    dyn-cpu-local \
-                   dma-immutable-static
+                   dma-immutable-static \
+                   iomem-podonce-size
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -216,6 +234,8 @@ asterinas-test-all: install install-osdk
 			$(RUN_RAM_SIZE_SMALL_TEST); \
 		elif [ "$${test}" = dma-immutable-static ]; then \
 			$(RUN_DMA_IMMUTABLE_STATIC_TEST); \
+		elif [ "$${test}" = iomem-podonce-size ]; then \
+			$(RUN_IOMEM_PODONCE_SIZE_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
