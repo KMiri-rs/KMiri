@@ -247,7 +247,7 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    dma-immutable-static \
                    iomem-podonce-size \
                    task-stack-reuse \
-                   kernel-task-entry-private
+                   kernel-task-entry-private arch-fs-gs-base
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
