@@ -65,9 +65,9 @@ pub struct ExposedCache(UniValMap<ExposedCacheNode>);
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 struct ExposedCacheNode {
     /// How many local nodes (in this subtree) are exposed with write permissions.
-    local_writes: u16,
+    local_writes: u32,
     /// How many local nodes (in this subtree) are exposed with read permissions.
-    local_reads: u16,
+    local_reads: u32,
 }
 
 impl ExposedCache {
@@ -106,7 +106,7 @@ impl ExposedCache {
         // always exists a foreign exposed node.
         // (We cannot bake this into the root's count as then if `node == root` it would
         // affect both `total` and `local`.)
-        let total_num = total_num + u16::from(is_wildcard_tree);
+        let total_num = total_num + u32::from(is_wildcard_tree);
 
         use WildcardAccessRelatedness::*;
         let relatedness = if total_num == 0 {
@@ -276,9 +276,9 @@ impl Tree {
                     .map(|id| exposed_cache.0.get(id).cloned().unwrap_or_default())
                     .fold((0, 0), |acc, wc| (acc.0 + wc.local_reads, acc.1 + wc.local_writes));
                 let expected_reads =
-                    child_reads + u16::from(exposed_as >= WildcardAccessLevel::Read);
+                    child_reads + u32::from(exposed_as >= WildcardAccessLevel::Read);
                 let expected_writes =
-                    child_writes + u16::from(exposed_as >= WildcardAccessLevel::Write);
+                    child_writes + u32::from(exposed_as >= WildcardAccessLevel::Write);
                 assert_eq!(
                     state.local_reads, expected_reads,
                     "expected {:?}'s (id:{id:?}) local_reads to be {expected_reads:?} instead of {:?} (child_reads: {child_reads:?}, exposed_as: {exposed_as:?})",
