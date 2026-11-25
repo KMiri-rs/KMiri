@@ -581,11 +581,20 @@ pub fn eval_entry<'tcx>(
     config: &MiriConfig,
     genmc_ctx: Option<Rc<GenmcCtx>>,
 ) -> Result<(), NonZeroI32> {
-    let (phys_config, page_table_enabled) = if let Some(toml) = &config.kmiri_toml {
+    let (mut phys_config, page_table_enabled) = if let Some(toml) = &config.kmiri_toml {
         (PhysConfig::new_with_toml(toml), toml.page_table_enabled())
     } else {
         (config.pseudo_physical_mem_config, DEFAULT_ENABLE_PAGE_TABLE)
     };
+    let explicit_cpu_local =
+        config.kmiri_toml.as_ref().is_some_and(|t| t.cpu_local_size_explicit());
+    if !explicit_cpu_local {
+        let needed = required_cpu_local_size(tcx);
+        if needed > phys_config.cpu_local_size {
+            phys_config.cpu_local_size = needed;
+            phys_config.kernel_code_size = PhysConfig::kernel_code_size_for(needed);
+        }
+    }
     mirch::init_pseudo_physical_mem(phys_config, page_table_enabled);
 
     // Copy setting before we move `config`.
@@ -811,4 +820,65 @@ mod tests {
         ));
         assert_eq!(cmd.trim_end_matches('\0'), r#""C:\Program Files\" arg1 "arg 2" "arg \" 3""#);
     }
+}
+
+/// Computes the minimum `.cpu_local` section size needed for all reachable
+/// `.cpu_local` statics, mirroring the native linker sizing `.cpu_local` from
+/// what is actually defined.
+fn required_cpu_local_size<'tcx>(tcx: TyCtxt<'tcx>) -> usize {
+    use rustc_data_structures::fx::FxHashSet;
+    use rustc_hir::def::DefKind;
+    let typing_env = ty::TypingEnv::fully_monomorphized();
+    let mut offset: u64 = 0;
+    let mut seen_statics = FxHashSet::default();
+    let mut check_static = |def_id: DefId| {
+        if !seen_statics.insert(def_id) {
+            return;
+        }
+        if !matches!(tcx.def_kind(def_id), DefKind::Static { .. }) {
+            return;
+        }
+        let attrs = tcx.codegen_fn_attrs(def_id);
+        if attrs.link_section.is_some_and(|s| s.as_str() == ".cpu_local") {
+            let ty = tcx.instantiate_and_normalize_erasing_regions(
+                ty::GenericArgs::empty(),
+                typing_env,
+                tcx.type_of(def_id),
+            );
+            if let Ok(layout) = tcx.layout_of(typing_env.as_query_input(ty)) {
+                let size = layout.size.bytes().max(1);
+                let align = layout.align.bytes().max(1);
+                offset = offset.saturating_add(15).saturating_add(align - 1).saturating_add(size);
+            }
+        }
+    };
+    fn walk_mod<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        mod_id: DefId,
+        visited: &mut FxHashSet<DefId>,
+        check_static: &mut impl FnMut(DefId),
+    ) {
+        if !visited.insert(mod_id) {
+            return;
+        }
+        for child in tcx.module_children(mod_id) {
+            if let Some(def_id) = child.res.opt_def_id() {
+                match tcx.def_kind(def_id) {
+                    DefKind::Mod => walk_mod(tcx, def_id, visited, check_static),
+                    DefKind::Static { .. } => check_static(def_id),
+                    _ => {}
+                }
+            }
+        }
+    }
+    for item_id in tcx.hir_crate_items(()).free_items() {
+        check_static(item_id.owner_id.to_def_id());
+    }
+    let mut visited_mods = FxHashSet::default();
+    for &cnum in tcx.crates(()) {
+        walk_mod(tcx, cnum.as_def_id(), &mut visited_mods, &mut check_static);
+    }
+    let page_size = mirch::page_size() as u64;
+    let needed = offset.next_multiple_of(page_size).max(mirch::config_cpu_local_size());
+    needed as usize
 }

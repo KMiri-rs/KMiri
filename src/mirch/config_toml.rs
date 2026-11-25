@@ -18,8 +18,8 @@ pub struct KMiriConfigToml {
     stack_mem_size: u64,
     /// The size of the CPU-local section, in bytes: a multiple of the page size.
     /// The kernel code section grows with it, so the kernel stack section keeps its size.
-    #[serde(default = "config_cpu_local_size")]
-    cpu_local_size: u64,
+    #[serde(default)]
+    cpu_local_size: Option<u64>,
     /// Linker-script / `extern` symbols that should keep a fixed address.
     /// Unknown `extern fn` symbols are rejected unless listed here (KMiri#76).
     /// The value is a physical address.
@@ -164,7 +164,7 @@ impl KMiriConfigToml {
                 path.display()
             ));
         }
-        let size = config.cpu_local_size;
+        let size = config.cpu_local_size();
         if size == 0 || !size.is_multiple_of(page_size() as u64) {
             return Err(format!(
                 "invalid `cpu_local_size` in `{}`: expected a non-zero multiple of {:#x}",
@@ -204,7 +204,11 @@ impl KMiriConfigToml {
     }
 
     pub fn cpu_local_size(&self) -> u64 {
-        self.cpu_local_size
+        self.cpu_local_size.unwrap_or_else(config_cpu_local_size)
+    }
+
+    pub fn cpu_local_size_explicit(&self) -> bool {
+        self.cpu_local_size.is_some()
     }
 
     pub fn page_table_enabled(&self) -> bool {

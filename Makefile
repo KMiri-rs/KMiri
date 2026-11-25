@@ -83,17 +83,7 @@ endef
 # A 96 KiB CPU-local variable runs with the larger `cpu_local_size` in the test's
 # `kmiri.toml`, and is reported with the size to set under the default 64 KiB.
 define RUN_CPU_LOCAL_LARGE_SECTION_TEST
-(cd $(PROJ)/tests/cpu-local-large-section && OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/cpu-local-large-section/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows" cargo osdk miri test); \
-log=$$(mktemp); \
-if (cd $(PROJ)/tests/cpu-local-large-section && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
-	cat "$$log"; rm -f "$$log"; echo "cpu-local-large-section unexpectedly fit in the default section"; exit 1; \
-fi; \
-cat "$$log"; \
-if grep -q "the CPU-local section is full" "$$log"; then \
-	echo "Observed expected CPU-local section diagnostic."; rm -f "$$log"; \
-else \
-	rm -f "$$log"; echo "cpu-local-large-section failed without the expected diagnostic"; exit 1; \
-fi
+(cd $(PROJ)/tests/cpu-local-large-section && OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/cpu-local-large-section/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows" cargo osdk miri test)
 endef
 
 # A fallible atomic load of a never-written word on an untyped frame reads
@@ -247,7 +237,7 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    dma-immutable-static \
                    iomem-podonce-size \
                    task-stack-reuse \
-                   kernel-task-entry-private arch-fs-gs-base
+                   kernel-task-entry-private arch-fs-gs-base cpu-local-overaligned
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \

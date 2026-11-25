@@ -1,0 +1,3 @@
+page_table = true
+total_mem_size = 0x800_0000
+cpu_local_size = 0x1_0000
