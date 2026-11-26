@@ -280,6 +280,9 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             && let Some(loc) = frame.current_loc().left()
         {
             let pending = ecx.machine.irq_cpus[cpu].pending.pop_front().unwrap();
+            if let Some(clock) = pending.clock {
+                ecx.acquire_clock(&clock)?;
+            }
             let interrupted_depth = ecx.active_thread_stack().len();
             let event_id = pending.event_id;
             let vector = pending.vector;

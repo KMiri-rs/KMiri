@@ -510,10 +510,11 @@ impl<'tcx> PrimitiveLayouts<'tcx> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum IrqSource {
     Timer,
     Test,
+    Ipi,
 }
 
 /// A pending simulated interrupt, delivered to the entry on the current Miri thread.
@@ -521,6 +522,7 @@ pub(crate) struct PendingIrq {
     pub(crate) vector: u8,
     pub(crate) event_id: u64,
     pub(crate) source: IrqSource,
+    pub(crate) clock: Option<crate::concurrency::VClock>,
 }
 
 pub(crate) struct ActiveIrq {
@@ -797,8 +799,38 @@ impl<'tcx> MiriMachine<'tcx> {
     pub(crate) fn queue_irq(&mut self, cpu: usize, vector: u8, source: IrqSource) -> u64 {
         let event_id = self.next_irq_event_id;
         self.next_irq_event_id = self.next_irq_event_id.wrapping_add(1);
-        self.irq_cpus[cpu].pending.push_back(PendingIrq { vector, event_id, source });
+        self.irq_cpus[cpu].pending.push_back(PendingIrq { vector, event_id, source, clock: None });
         event_id
+    }
+
+    pub(crate) fn queue_ipi(
+        &mut self,
+        cpu: usize,
+        vector: u8,
+        clock: Option<crate::concurrency::VClock>,
+    ) -> (u64, bool) {
+        if let Some(existing) = self.irq_cpus[cpu]
+            .pending
+            .iter_mut()
+            .find(|p| p.source == IrqSource::Ipi && p.vector == vector)
+        {
+            if let Some(new_clock) = clock {
+                match &mut existing.clock {
+                    Some(existing_clock) => existing_clock.join(&new_clock),
+                    None => existing.clock = Some(new_clock),
+                }
+            }
+            return (existing.event_id, true);
+        }
+        let event_id = self.next_irq_event_id;
+        self.next_irq_event_id = self.next_irq_event_id.wrapping_add(1);
+        self.irq_cpus[cpu].pending.push_back(PendingIrq {
+            vector,
+            event_id,
+            source: IrqSource::Ipi,
+            clock,
+        });
+        (event_id, false)
     }
 
     pub(crate) fn maybe_queue_timer_irq(&mut self, cpu: usize) -> Option<u64> {
