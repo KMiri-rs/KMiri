@@ -53,6 +53,18 @@ define RUN_SMP_AP_TASK_RETURNS_TEST
 cd $(PROJ)/tests/smp-ap-task-returns && $(SMP_ENV_VARS) cargo osdk miri test
 endef
 
+SMP_IPI_CALL_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/smp-ipi-call/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows"
+
+define RUN_SMP_IPI_CALL_TEST
+cd $(PROJ)/tests/smp-ipi-call && $(SMP_IPI_CALL_ENV_VARS) cargo osdk miri test
+endef
+
+SMP_TLB_SHOOTDOWN_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/smp-tlb-shootdown/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows"
+
+define RUN_SMP_TLB_SHOOTDOWN_TEST
+cd $(PROJ)/tests/smp-tlb-shootdown && $(SMP_TLB_SHOOTDOWN_ENV_VARS) cargo osdk miri test
+endef
+
 # Both sides of the reported race must be the unsynchronized `+= 1` on the
 # counter, which the diagnostic quotes once for each side.
 define RUN_SMP_DATA_RACE_TEST
@@ -184,6 +196,14 @@ else ifeq ($(ASTERINAS_TEST),smp-ap-tasks)
 asterinas: install install-osdk
 	$(RUN_SMP_AP_TASKS_TEST)
 
+else ifeq ($(ASTERINAS_TEST),smp-ipi-call)
+asterinas: install install-osdk
+	$(RUN_SMP_IPI_CALL_TEST)
+
+else ifeq ($(ASTERINAS_TEST),smp-tlb-shootdown)
+asterinas: install install-osdk
+	$(RUN_SMP_TLB_SHOOTDOWN_TEST)
+
 else ifeq ($(ASTERINAS_TEST),smp-data-race)
 asterinas: install install-osdk
 	$(RUN_SMP_DATA_RACE_TEST)
@@ -201,6 +221,7 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    irq-rcu-uaf-lifo heap-box-drop \
                    vmspace-activate-irq vmspace-activate-irq-control \
                    smp-ap-tasks smp-ap-task-returns smp-data-race \
+                   smp-ipi-call smp-tlb-shootdown \
                    cpu-local-large-section \
                    frame-atomic-fallible frame-atomic-uninit \
                    segment-wrapped-size \
@@ -224,6 +245,10 @@ asterinas-test-all: install install-osdk
 			($(RUN_SMP_AP_TASKS_TEST)); \
 		elif [ "$${test}" = smp-ap-task-returns ]; then \
 			($(RUN_SMP_AP_TASK_RETURNS_TEST)); \
+		elif [ "$${test}" = smp-ipi-call ]; then \
+			($(RUN_SMP_IPI_CALL_TEST)); \
+		elif [ "$${test}" = smp-tlb-shootdown ]; then \
+			($(RUN_SMP_TLB_SHOOTDOWN_TEST)); \
 		elif [ "$${test}" = smp-data-race ]; then \
 			$(RUN_SMP_DATA_RACE_TEST); \
 		elif [ "$${test}" = cpu-local-large-section ]; then \

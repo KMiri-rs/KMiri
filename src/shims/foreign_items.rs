@@ -1106,6 +1106,52 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     }
                 }
             }
+            // Send a fixed-vector IPI to CPU `cpu`, like writing the local APIC ICR.
+            "kern_miri_send_ipi" => {
+                let [cpu, vector] =
+                    ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let cpu = ecx.read_target_usize(cpu)?;
+                let vector = ecx.read_scalar(vector)?.to_u8()?;
+                if !ecx.machine.irq_config.enabled() {
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "{link_name}: vector {vector} used while KMiri IRQ simulation is disabled"
+                    )));
+                }
+                if vector < 32 {
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "{link_name}: vector {vector} is reserved for CPU exceptions (valid range 32..=255)"
+                    )));
+                }
+                if ecx.machine.irq_entry.is_none() {
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "{link_name}: vector {vector} sent before IRQ entry was registered"
+                    )));
+                }
+                let num_cpus = ecx.machine.threads.num_cpus();
+                let Some(cpu) = usize::try_from(cpu).ok().filter(|&cpu| cpu < num_cpus) else {
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "{link_name}: target CPU {cpu} is out of range (machine has {num_cpus} CPUs)"
+                    )));
+                };
+                if !ecx.machine.threads.is_cpu_started(cpu) {
+                    throw_machine_stop!(TerminationInfo::Abort(format!(
+                        "{link_name}: target CPU {cpu} has not been started"
+                    )));
+                }
+                let clock = ecx.release_clock(|c| c.clone())?;
+                let (event_id, coalesced) = ecx.machine.queue_ipi(cpu, vector, clock);
+                if ecx.machine.irq_config.trace() {
+                    let action = if coalesced { "coalesced" } else { "queued" };
+                    eprintln!(
+                        "KMiri IRQ: event={event_id} cpu={cpu} from_cpu={} thread={:?} action={action} vector={vector} source=Ipi block_count={} pending={} IF={}",
+                        ecx.machine.threads.active_cpu,
+                        ecx.machine.threads.active_thread(),
+                        ecx.machine.basic_block_count,
+                        ecx.machine.irq_cpus[cpu].pending.len(),
+                        ecx.machine.irq_cpus[cpu].enabled,
+                    );
+                }
+            }
             // The size of the machine's RAM, which starts at physical address 0: what a
             // firmware memory map reports to the kernel.
             "kern_miri_ram_size" => {

@@ -1,0 +1,16 @@
+error: abnormal termination: kern_miri_send_ipi: vector 31 is reserved for CPU exceptions (valid range 32..=255)
+  --> tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+   |
+LL |     unsafe { kern_miri_send_ipi(cpu, vector) };
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ abnormal termination occurred here
+   |
+   = note: stack backtrace:
+           0: irq::send_ipi
+               at tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+           1: main
+               at tests/fail/kmiri/smp-ipi-invalid-vector.rs:LL:CC
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
