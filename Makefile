@@ -237,7 +237,10 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    dma-immutable-static \
                    iomem-podonce-size \
                    task-stack-reuse \
-                   kernel-task-entry-private arch-fs-gs-base cpu-local-overaligned
+                   kernel-task-entry-private \
+                   arch-fs-gs-base \
+                   cpu-local-overaligned \
+                   task-double-run
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -249,7 +252,7 @@ asterinas-test-all: install install-osdk
 			$(RUN_VMSPACE_ACTIVATE_IRQ_TEST); \
 		elif [ "$${test}" = vmspace-activate-irq-control ]; then \
 			($(RUN_VMSPACE_ACTIVATE_IRQ_CONTROL_TEST)); \
-		elif [ "$${test}" = irq-trap-path ] || [ "$${test}" = irq-simulation ]; then \
+		elif [ "$${test}" = irq-trap-path ] || [ "$${test}" = irq-simulation ] || [ "$${test}" = task-double-run ]; then \
 			(cd $(PROJ)/tests/$${test} && OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/$${test}/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows" cargo osdk miri test); \
 		elif [ "$${test}" = smp-ap-tasks ]; then \
 			($(RUN_SMP_AP_TASKS_TEST)); \
