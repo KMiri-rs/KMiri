@@ -144,6 +144,19 @@ endef
 # backing memory without UB. The test powers off deliberately right after
 # printing the value so post-`kernel_main` allocations do not reuse the frame
 # still in the global allocator's free pool (asterinas#4295).
+define RUN_MEMORY_MAP_HOLE_UNBACKED_TEST
+log=$$(mktemp); \
+if (cd $(PROJ)/tests/memory-map-hole-unbacked && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
+	cat "$$log"; rm -f "$$log"; echo "memory-map-hole-unbacked unexpectedly completed without UB"; exit 1; \
+fi; \
+cat "$$log"; \
+if grep -qF "memory-map-hole-unbacked: probing hole" "$$log" && grep -q "Undefined Behavior: memory access failed:.*dangling pointer" "$$log"; then \
+	echo "Observed expected dangling/no-memory UB on hole page access."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "memory-map-hole-unbacked failed without the expected dangling pointer UB"; exit 1; \
+fi
+endef
+
 define RUN_FRAME_FROM_UNUSED_TEST
 log=$$(mktemp); \
 (cd $(PROJ)/tests/frame-from-unused && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1 || true; \
@@ -252,7 +265,7 @@ asterinas: install install-osdk
 		$(ASTERINAS_ENV_VARS) cargo osdk miri test
 endif
 
-ASTERINAS_TESTS := init frame-realloc frame-from-unused page-table-realloc segment-zeroed \
+ASTERINAS_TESTS := init frame-realloc frame-from-unused memory-map-hole memory-map-hole-unbacked page-table-realloc segment-zeroed \
                    task-switch-back task-exit-last task-exit-with-runnable \
                    irq-simulation irq-trap-path irq-rcu-uaf \
                    irq-rcu-uaf-lifo heap-box-drop \
@@ -312,6 +325,8 @@ asterinas-test-all: install install-osdk
 			$(RUN_IRQ_NOUNWIND_PANIC_TEST); \
 		elif [ "$${test}" = frame-from-unused ]; then \
 			$(RUN_FRAME_FROM_UNUSED_TEST); \
+		elif [ "$${test}" = memory-map-hole-unbacked ]; then \
+			$(RUN_MEMORY_MAP_HOLE_UNBACKED_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \

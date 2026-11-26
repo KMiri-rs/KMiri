@@ -1159,6 +1159,34 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let size = mirch::total_mem_size();
                 ecx.write_scalar(Scalar::from_target_usize(size.try_into().unwrap(), ecx), dest)?;
             }
+            // Firmware memory map query primitives: returns the machine's RAM and
+            // reserved entries; omitted ranges below `total_mem_size` are non-RAM holes.
+            "kern_miri_memory_map_len" => {
+                let [] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let len = mirch::memory_map().len();
+                ecx.write_scalar(Scalar::from_target_usize(len.try_into().unwrap(), ecx), dest)?;
+            }
+            "kern_miri_memory_map_entry" => {
+                let [index, base_ptr, len_ptr, kind_ptr] =
+                    ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let index = ecx.read_target_usize(index)? as usize;
+                let base_ptr = ecx.read_pointer(base_ptr)?;
+                let len_ptr = ecx.read_pointer(len_ptr)?;
+                let kind_ptr = ecx.read_pointer(kind_ptr)?;
+                if let Some(entry) = mirch::memory_map().get(index) {
+                    let usize_layout = ecx.machine.layouts.usize;
+                    let u32_layout = ecx.machine.layouts.u32;
+                    let base_place = ecx.ptr_to_mplace(base_ptr, usize_layout);
+                    let len_place = ecx.ptr_to_mplace(len_ptr, usize_layout);
+                    let kind_place = ecx.ptr_to_mplace(kind_ptr, u32_layout);
+                    ecx.write_scalar(Scalar::from_target_usize(entry.base, ecx), &base_place)?;
+                    ecx.write_scalar(Scalar::from_target_usize(entry.len, ecx), &len_place)?;
+                    ecx.write_scalar(Scalar::from_u32(entry.kind.as_u32()), &kind_place)?;
+                    ecx.write_scalar(Scalar::from_bool(true), dest)?;
+                } else {
+                    ecx.write_scalar(Scalar::from_bool(false), dest)?;
+                }
+            }
             "kern_miri_cpu_count" => {
                 let [] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
                 let num_cpus = ecx.machine.threads.num_cpus();
@@ -1279,6 +1307,12 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let page_size = mirch::page_size();
                 for i in 0..count {
                     let addr = paddr + i * page_size;
+                    if mirch::is_non_ram_page(addr) {
+                        // Non-RAM holes/reserved pages never receive KMiri backing;
+                        // leaving them unbacked ensures the first access is reported
+                        // as a dangling/no-memory access.
+                        continue;
+                    }
                     mirch::check_page_state(addr, PageState::Unused)?;
                     mirch::set_page_state(addr, PageState::Untyped);
                     insert_init_mask(ecx, addr, ecx.machine.get_default_alloc_params());

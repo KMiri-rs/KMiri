@@ -2,6 +2,7 @@ use std::{fs, io};
 
 use serde::Deserialize;
 
+use super::{MemoryMapEntry, MemoryMapKind};
 use crate::KMiriConfigToml;
 use crate::mirch::{config_cpu_local_size, try_kernel_code_vaddr_to_paddr};
 
@@ -268,4 +269,55 @@ pub fn kernel_code_base_vaddr() -> usize {
 /// Returns base virtual address for boot page table linear mapping
 pub fn boot_pt_linear_mapping_base_vaddr() -> usize {
     config().boot_pt_linear_mapping_base_vaddr
+}
+
+/// Builds the default firmware memory map for a machine with `total_mem_size` bytes
+/// and a kernel image occupying `[0, kernel_code_size)`.
+///
+/// Mirrors the shape of a native x86 firmware map (low usable RAM, an absent
+/// non-RAM hole of 96 pages / 384 KiB like `0xa0000..0x100000`, a firmware-reserved
+/// region, and high usable RAM above the hole) placed above `kernel_code_size` so
+/// it does not overlap KMiri's kernel code/static/stack layout.
+pub fn default_memory_map(total_mem_size: usize, kernel_code_size: usize) -> Vec<MemoryMapEntry> {
+    let page = page_size();
+    let hole_len = 0x6_0000usize; // 384 KiB (96 pages), same size as native 0xa0000..0x100000
+    let reserved_len = 0x2_0000usize; // 128 KiB (32 pages)
+    let min_headroom = 0x20_0000usize; // 2 MiB above kernel image
+    if total_mem_size >= kernel_code_size.saturating_add(min_headroom) {
+        let avail = total_mem_size - kernel_code_size;
+        let hole_base = (kernel_code_size + avail * 3 / 4) & !(page - 1);
+        let reserved_base = hole_base + hole_len;
+        let high_ram_base = reserved_base + reserved_len;
+        if high_ram_base < total_mem_size {
+            return vec![
+                MemoryMapEntry { base: 0, len: hole_base as u64, kind: MemoryMapKind::Usable },
+                MemoryMapEntry {
+                    base: reserved_base as u64,
+                    len: reserved_len as u64,
+                    kind: MemoryMapKind::Reserved,
+                },
+                MemoryMapEntry {
+                    base: high_ram_base as u64,
+                    len: (total_mem_size - high_ram_base) as u64,
+                    kind: MemoryMapKind::Usable,
+                },
+            ];
+        }
+    }
+    vec![MemoryMapEntry { base: 0, len: total_mem_size as u64, kind: MemoryMapKind::Usable }]
+}
+
+/// Resolves the active firmware memory map from `kmiri.toml` (if configured) or the default map.
+pub fn resolve_memory_map(
+    toml: Option<&KMiriConfigToml>,
+    config: &PhysConfig,
+) -> Vec<MemoryMapEntry> {
+    if let Some(toml) = toml
+        && !toml.memory_map().is_empty()
+    {
+        let mut entries = toml.memory_map().to_vec();
+        entries.sort_by_key(|e| (e.base, e.len));
+        return entries;
+    }
+    default_memory_map(config.total_mem_size, config.kernel_code_size)
 }
