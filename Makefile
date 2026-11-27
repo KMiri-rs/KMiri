@@ -153,6 +153,22 @@ endef
 # Runs the ktests of tests/ktest-runner through tool/ktest-sweep.py and checks
 # that each one gets the expected result, including the test after the one that
 # hits Undefined Behavior.
+
+# `ostd::task::scheduler::kernel_task_entry` is an internal cfg(miri) thread
+# entry point and must not be callable from outside `ostd`.
+define RUN_KERNEL_TASK_ENTRY_PRIVATE_TEST
+log=$$(mktemp); \
+if (cd $(PROJ)/tests/kernel-task-entry-private && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
+	cat "$$log"; rm -f "$$log"; echo "kernel-task-entry-private unexpectedly compiled and passed"; exit 1; \
+fi; \
+cat "$$log"; \
+if grep -qF "error[E0603]: function \`kernel_task_entry\` is private" "$$log"; then \
+	echo "Observed expected privacy error for kernel_task_entry."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "kernel-task-entry-private failed without the expected E0603 privacy error"; exit 1; \
+fi
+endef
+
 define RUN_KTEST_RUNNER_TEST
 out=$$(mktemp -d); \
 (cd $(PROJ)/tests/ktest-runner && $(ASTERINAS_ENV_VARS) python3 $(PROJ)/tool/ktest-sweep.py . "$$out") || true; \
@@ -230,7 +246,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    dyn-cpu-local \
                    dma-immutable-static \
                    iomem-podonce-size \
-                   task-stack-reuse
+                   task-stack-reuse \
+                   kernel-task-entry-private
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -262,6 +279,8 @@ asterinas-test-all: install install-osdk
 			$(RUN_DMA_IMMUTABLE_STATIC_TEST); \
 		elif [ "$${test}" = iomem-podonce-size ]; then \
 			$(RUN_IOMEM_PODONCE_SIZE_TEST); \
+		elif [ "$${test}" = kernel-task-entry-private ]; then \
+			$(RUN_KERNEL_TASK_ENTRY_PRIVATE_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
