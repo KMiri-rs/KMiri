@@ -8,6 +8,7 @@ pub mod kmiri_sig;
 mod math;
 #[cfg(all(feature = "native-lib", unix))]
 pub mod native_lib;
+pub mod semihosting;
 mod unix;
 mod windows;
 

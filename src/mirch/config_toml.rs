@@ -5,6 +5,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use super::config::{PhysConfig, page_size};
+use super::uart16550::Uart16550ConfigToml;
 use super::virtio_blk::{VIRTIO_MMIO_WINDOW, VirtioBlkConfigToml};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -54,6 +55,9 @@ pub struct KMiriConfigToml {
     /// it, nothing is outside RAM.
     #[serde(default)]
     virtio_blk: Option<VirtioBlkConfigToml>,
+    /// 16550-compatible UARTs reached by volatile accesses (`uart16550.rs`).
+    #[serde(default)]
+    uart16550: Vec<Uart16550ConfigToml>,
     /// Optional firmware memory map entries (`[[memory_map]]`).
     /// Ranges omitted below `total_mem_size` are non-RAM holes.
     /// When omitted, KMiri uses a default map with a firmware hole and a reserved
@@ -230,6 +234,14 @@ impl KMiriConfigToml {
                 path.display()
             ));
         }
+        if config.uart16550.iter().any(|uart| {
+            uart.reg_shift > 8 || uart.base_addr.checked_add(8 << uart.reg_shift).is_none()
+        }) {
+            return Err(format!(
+                "invalid `[[uart16550]]` in `{}`: `reg_shift` must be at most 8 and the register window must fit in the address space",
+                path.display()
+            ));
+        }
         if !config.memory_map.is_empty() {
             let page = page_size() as u64;
             let mut sorted = config.memory_map.clone();
@@ -347,6 +359,10 @@ impl KMiriConfigToml {
 
     pub fn virtio_blk(&self) -> Option<&VirtioBlkConfigToml> {
         self.virtio_blk.as_ref()
+    }
+
+    pub fn uart16550(&self) -> &[Uart16550ConfigToml] {
+        &self.uart16550
     }
 }
 

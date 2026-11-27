@@ -20,6 +20,7 @@ use rustc_target::spec::Os;
 
 use super::alloc::EvalContextExt as _;
 use super::backtrace::EvalContextExt as _;
+use super::semihosting::EvalContextExt as _;
 use crate::concurrency::GenmcEvalContextExt as _;
 use crate::concurrency::thread::Stack;
 use crate::eval::{ExitType, ProgramExitHandler};
@@ -958,6 +959,14 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     }
                     None => ecx.write_int(0, dest)?,
                 }
+            }
+            // A semihosting request (see `shims/semihosting.rs`).
+            "kern_miri_semihosting" => {
+                let [op, param] = ecx.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
+                let op = ecx.read_target_usize(op)?;
+                let param = ecx.read_pointer(param)?;
+                let ret = ecx.semihosting_call(op, param)?;
+                ecx.write_scalar(Scalar::from_target_usize(ret, ecx), dest)?;
             }
             "kern_miri_record_time" => {
                 use std::time::{SystemTime, UNIX_EPOCH};

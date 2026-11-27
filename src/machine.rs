@@ -790,6 +790,9 @@ pub struct MiriMachine<'tcx> {
     /// The virtio block device, if the KMiri config has one.
     pub virtio_blk: RefCell<Option<mirch::VirtioBlk>>,
 
+    /// The 16550 UARTs of the KMiri config.
+    pub uart16550: RefCell<Vec<mirch::Uart16550>>,
+
     /// Whether `exit` has been called (or, equivalently, `main` has returned).
     /// It is UB to call `exit` again.
     pub exit_called: bool,
@@ -1011,6 +1014,13 @@ impl<'tcx> MiriMachine<'tcx> {
             kmiri_toml: config.kmiri_toml.as_ref().map(|val | Box::new( val.clone())),
             virtio_blk: RefCell::new(
                 config.kmiri_toml.as_ref().and_then(|toml| toml.virtio_blk()).map(mirch::VirtioBlk::new),
+            ),
+            uart16550: RefCell::new(
+                config
+                    .kmiri_toml
+                    .as_ref()
+                    .map(|toml| toml.uart16550().iter().map(mirch::Uart16550::new).collect())
+                    .unwrap_or_default(),
             ),
             reachable_function_instances: Default::default(),
             backtrace_style: config.backtrace_style,
