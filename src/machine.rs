@@ -540,8 +540,8 @@ pub(crate) struct CpuIrqState {
 }
 
 impl CpuIrqState {
-    fn new() -> Self {
-        Self { enabled: true, pending: VecDeque::new(), active: None }
+    fn new(enabled: bool) -> Self {
+        Self { enabled, pending: VecDeque::new(), active: None }
     }
 }
 
@@ -901,6 +901,7 @@ impl<'tcx> MiriMachine<'tcx> {
         let irq_config =
             config.kmiri_toml.as_ref().map(|toml| toml.irq().clone()).unwrap_or_default();
         let irq_rng = StdRng::seed_from_u64(irq_config.random_seed());
+        let irq_enabled_at_start = irq_config.enabled_at_start();
         let smp_config =
             config.kmiri_toml.as_ref().map(|toml| toml.smp().clone()).unwrap_or_default();
         let smp_rng = StdRng::seed_from_u64(smp_config.seed());
@@ -1040,7 +1041,9 @@ impl<'tcx> MiriMachine<'tcx> {
             report_progress: config.report_progress,
             basic_block_count: 0,
             irq_config,
-            irq_cpus: (0..smp_config.num_cpus()).map(|_| CpuIrqState::new()).collect(),
+            irq_cpus: (0..smp_config.num_cpus())
+                .map(|_| CpuIrqState::new(irq_enabled_at_start))
+                .collect(),
             irq_rng,
             smp_config,
             smp_rng,
@@ -1397,6 +1400,48 @@ impl<'tcx> MiriInterpCxExt<'tcx> for MiriInterpCx<'tcx> {
     #[inline(always)]
     fn eval_context_mut(&mut self) -> &mut MiriInterpCx<'tcx> {
         self
+    }
+}
+
+/// A constant initializer can only produce a pointer to device memory (a `[[kalloc]]` region) from
+/// a plain address, which carries no provenance. Device memory is outside every Rust allocation
+/// and the provenance of a pointer used to access it is irrelevant (see `core::ptr::read_volatile`),
+/// so give every aligned, provenance-free, pointer-sized word that holds such an address wildcard
+/// provenance, as an integer-to-pointer cast at run time would. An integer that merely equals a
+/// device address is unaffected: reading it as an integer drops the provenance again.
+fn give_device_addresses_wildcard_provenance<'tcx>(
+    ecx: &InterpCx<'tcx, MiriMachine<'tcx>>,
+    alloc: &mut Allocation<Provenance, (), MiriAllocBytes>,
+) {
+    let Some(toml) = ecx.machine.kmiri_toml.as_ref() else { return };
+    // In an allocation aligned below pointer alignment no word is aligned.
+    if toml.page_table_enabled() || alloc.align < ecx.tcx.data_layout.pointer_align() {
+        return;
+    }
+    let size = ecx.pointer_size();
+    let endian = ecx.tcx.data_layout.endian;
+    let mut offset = Size::ZERO;
+    while offset + size <= alloc.size() {
+        let range = alloc_range(offset, size);
+        offset += size;
+        if !alloc.provenance().range_empty(range, ecx)
+            || alloc.init_mask().is_range_initialized(range).is_err()
+        {
+            continue;
+        }
+        let addr = rustc_middle::mir::interpret::read_target_uint(
+            endian,
+            alloc.get_bytes_unchecked(range),
+        )
+        .unwrap();
+        if addr == 0 || toml.kalloc_containing(addr as usize).is_none() {
+            continue;
+        }
+        let ptr = interpret::Pointer::new(Provenance::Wildcard, Size::from_bytes(addr));
+        let mutability = alloc.mutability;
+        alloc.mutability = Mutability::Mut;
+        alloc.write_scalar(ecx, range, Scalar::from_pointer(ptr, ecx)).unwrap();
+        alloc.mutability = mutability;
     }
 }
 
@@ -2021,11 +2066,12 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
         alloc: &'b Allocation,
     ) -> InterpResult<'tcx, Cow<'b, Allocation<Self::Provenance, Self::AllocExtra, Self::Bytes>>>
     {
-        let origin_alloc = alloc.adjust_from_tcx(
+        let mut origin_alloc = alloc.adjust_from_tcx(
             &ecx.tcx,
             |bytes, align| ecx.get_global_alloc_bytes(id, bytes, align),
             |ptr| ecx.global_root_pointer(ptr),
         )?;
+        give_device_addresses_wildcard_provenance(ecx, &mut origin_alloc);
         let kind = MiriMemoryKind::Global.into();
         let extra =
             MiriMachine::init_allocation(ecx, id, kind, origin_alloc.size(), origin_alloc.align)?;
