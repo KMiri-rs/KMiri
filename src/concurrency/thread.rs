@@ -193,6 +193,10 @@ pub struct Thread<'tcx> {
     /// one that is left (see `reclaim_stack_addr`).
     pub(crate) live_stack_allocs: RefCell<BTreeMap<u64, AllocId>>,
 
+    /// Reverse map of `live_stack_allocs`: virtual address of each live stack
+    /// allocation of this thread, keyed by `AllocId`.
+    pub(crate) live_stack_vaddrs: RefCell<FxHashMap<AllocId, u64>>,
+
     /// True while the top frame is being popped, i.e. between
     /// `before_stack_pop` and `after_stack_pop`. During that time
     /// `next_stack_vaddr` is managed by the frame pop itself.
@@ -350,17 +354,20 @@ impl<'tcx> std::fmt::Debug for Thread<'tcx> {
 }
 
 impl<'tcx> Thread<'tcx> {
-    /// Called when the stack allocation `dead_id` at `vaddr` dies.
+    /// Called when the stack allocation `dead_id` dies.
     ///
     /// Moves the stack pointer back up to the lowest stack allocation that is
     /// still live, but not above the base of the top frame (the caller's
     /// frames and the slot reserved for the return value stay untouched).
     /// Without this, a loop that makes a local live and dead again would
     /// take a new stack address in every iteration until the stack is full.
-    pub(crate) fn reclaim_stack_addr(&mut self, vaddr: u64, dead_id: AllocId) {
+    pub(crate) fn reclaim_stack_addr(&mut self, dead_id: AllocId) {
+        let Some(vaddr) = self.live_stack_vaddrs.get_mut().remove(&dead_id) else {
+            // Not a stack allocation of this thread.
+            return;
+        };
         let live = self.live_stack_allocs.get_mut();
         if live.get(&vaddr) != Some(&dead_id) {
-            // Not a stack allocation of this thread.
             return;
         }
         live.remove(&vaddr);
@@ -389,6 +396,7 @@ impl<'tcx> Thread<'tcx> {
             next_stack_vaddr: RefCell::new(stack_range.end),
             stack_bottom: stack_range.start,
             live_stack_allocs: RefCell::new(BTreeMap::new()),
+            live_stack_vaddrs: RefCell::new(FxHashMap::default()),
             popping_frame: false,
             origin_span: DUMMY_SP,
             top_user_relevant_frame: None,
@@ -410,6 +418,7 @@ impl VisitProvenance for Thread<'_> {
             next_stack_vaddr: _,
             stack_bottom: _,
             live_stack_allocs: _,
+            live_stack_vaddrs: _,
             popping_frame: _,
             origin_span: _,
             top_user_relevant_frame: _,

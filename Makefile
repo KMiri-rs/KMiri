@@ -229,7 +229,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    mmio-floating-bus \
                    dyn-cpu-local \
                    dma-immutable-static \
-                   iomem-podonce-size
+                   iomem-podonce-size \
+                   task-stack-reuse
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
