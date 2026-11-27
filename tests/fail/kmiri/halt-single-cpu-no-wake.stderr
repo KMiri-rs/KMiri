@@ -1,0 +1,16 @@
+error: all started CPUs are halted and no interrupt can wake them: cpu 0 (`main`)
+  --> tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+   |
+LL | }
+   |  ^ the last CPU halted here
+   |
+   = note: stack backtrace:
+           0: irq::halt
+               at tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+           1: main
+               at tests/fail/kmiri/halt-single-cpu-no-wake.rs:LL:CC
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+

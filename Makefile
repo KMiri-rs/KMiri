@@ -65,6 +65,12 @@ define RUN_SMP_TLB_SHOOTDOWN_TEST
 cd $(PROJ)/tests/smp-tlb-shootdown && $(SMP_TLB_SHOOTDOWN_ENV_VARS) cargo osdk miri test
 endef
 
+SMP_HALT_IDLE_ENV_VARS := OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/smp-halt-idle/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows"
+
+define RUN_SMP_HALT_IDLE_TEST
+cd $(PROJ)/tests/smp-halt-idle && $(SMP_HALT_IDLE_ENV_VARS) cargo osdk miri test
+endef
+
 # Both sides of the reported race must be the unsynchronized `+= 1` on the
 # counter, which the diagnostic quotes once for each side.
 define RUN_SMP_DATA_RACE_TEST
@@ -254,6 +260,10 @@ else ifeq ($(ASTERINAS_TEST),smp-tlb-shootdown)
 asterinas: install install-osdk
 	$(RUN_SMP_TLB_SHOOTDOWN_TEST)
 
+else ifeq ($(ASTERINAS_TEST),smp-halt-idle)
+asterinas: install install-osdk
+	$(RUN_SMP_HALT_IDLE_TEST)
+
 else ifeq ($(ASTERINAS_TEST),smp-data-race)
 asterinas: install install-osdk
 	$(RUN_SMP_DATA_RACE_TEST)
@@ -271,7 +281,7 @@ ASTERINAS_TESTS := init frame-realloc frame-from-unused memory-map-hole memory-m
                    irq-rcu-uaf-lifo heap-box-drop \
                    vmspace-activate-irq vmspace-activate-irq-control \
                    smp-ap-tasks smp-ap-task-returns smp-data-race \
-                   smp-ipi-call smp-tlb-shootdown \
+                   smp-ipi-call smp-tlb-shootdown smp-halt-idle \
                    cpu-local-large-section \
                    frame-atomic-fallible frame-atomic-uninit \
                    segment-wrapped-size \
@@ -307,6 +317,8 @@ asterinas-test-all: install install-osdk
 			($(RUN_SMP_IPI_CALL_TEST)); \
 		elif [ "$${test}" = smp-tlb-shootdown ]; then \
 			($(RUN_SMP_TLB_SHOOTDOWN_TEST)); \
+		elif [ "$${test}" = smp-halt-idle ]; then \
+			($(RUN_SMP_HALT_IDLE_TEST)); \
 		elif [ "$${test}" = smp-data-race ]; then \
 			$(RUN_SMP_DATA_RACE_TEST); \
 		elif [ "$${test}" = cpu-local-large-section ]; then \

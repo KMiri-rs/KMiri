@@ -37,6 +37,10 @@ pub enum TerminationInfo {
     GenmcMoot,
     /// All threads are blocked.
     GlobalDeadlock,
+    /// All started CPUs are halted and no interrupt can wake them.
+    AllCpusHalted {
+        halted: Vec<(usize, String)>,
+    },
     /// Some thread discovered a deadlock condition (e.g. in a mutex with reentrancy checking).
     LocalDeadlock,
     MultipleSymbolDefinitions {
@@ -84,6 +88,14 @@ impl fmt::Display for TerminationInfo {
             StackedBorrowsUb { msg, .. } => write!(f, "{msg}"),
             TreeBorrowsUb { title, .. } => write!(f, "{title}"),
             GlobalDeadlock => write!(f, "the evaluated program deadlocked"),
+            AllCpusHalted { halted } => {
+                let details = halted
+                    .iter()
+                    .map(|(cpu, name)| format!("cpu {cpu} (`{name}`)"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "all started CPUs are halted and no interrupt can wake them: {details}")
+            }
             LocalDeadlock => write!(f, "a thread deadlocked"),
             GenmcMoot => write!(f, "GenMC wants to skip this execution"),
             MultipleSymbolDefinitions { link_name, .. } =>
@@ -272,6 +284,10 @@ pub fn report_result<'tcx>(
             }
             LocalDeadlock => {
                 main_span_labels.push(format!("thread got stuck here"));
+                None
+            }
+            AllCpusHalted { .. } => {
+                main_span_labels.push(format!("the last CPU halted here"));
                 None
             }
             GlobalDeadlock => {
