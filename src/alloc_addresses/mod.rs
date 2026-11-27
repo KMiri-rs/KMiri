@@ -426,6 +426,34 @@ fn dummy_alloc(params: MiriAllocParams) -> *const u8 {
     ptr
 }
 
+/// A thread whose stack range lies in memory the program owns gets its locals
+/// placed inside that memory, as allocations of their own; a kernel may also
+/// keep a thread's saved state in the same memory, just above the range. An
+/// address there that no local covers is in the memory holding the range, which
+/// starts at or below the range's bottom. For each such bottom, the search looks
+/// at the allocations that start there and at the nearest one below it, and no
+/// further.
+fn holding_stack_range<'tcx>(
+    ecx: &MiriInterpCx<'tcx>,
+    int_to_ptr_map: &[(u64, AllocId)],
+    addr: u64,
+) -> Option<AllocId> {
+    ecx.machine.threads.stack_bottoms_up_to(addr).find_map(|bottom| {
+        let mut pos = int_to_ptr_map.partition_point(|&(base, _)| base <= bottom);
+        while pos > 0 {
+            pos -= 1;
+            let (base, alloc_id) = int_to_ptr_map[pos];
+            if addr - base < ecx.get_alloc_info(alloc_id).size.bytes() {
+                return Some(alloc_id);
+            }
+            if base < bottom {
+                break;
+            }
+        }
+        None
+    })
+}
+
 impl<'tcx> EvalContextExt<'tcx> for crate::MiriInterpCx<'tcx> {}
 pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     /// Allocates a new allocation at the given address for typed slot.
@@ -876,6 +904,11 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 // allocations will *not* be recognized at their "end" address.
                 let size = ecx.get_alloc_info(alloc_id).size;
                 if offset < size.bytes() {
+                    Some(alloc_id)
+                } else if let Some(alloc_id) = (!page_table_enabled)
+                    .then(|| holding_stack_range(ecx, &global_state.int_to_ptr_map, addr))
+                    .flatten()
+                {
                     Some(alloc_id)
                 } else {
                     // FIXME: explain the kmiri logic in this branch
