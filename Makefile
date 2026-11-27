@@ -146,6 +146,22 @@ endef
 
 # `ostd::task::scheduler::kernel_task_entry` is an internal cfg(miri) thread
 # entry point and must not be callable from outside `ostd`.
+# Panicking inside a timer IRQ callback crosses `extern "sysv64" fn trap_handler`
+# (nounwind), so `osdk-test-kernel` must abort with `panic_cannot_unwind` instead
+# of looping forever in `begin_panic`.
+define RUN_IRQ_NOUNWIND_PANIC_TEST
+log=$$(mktemp); \
+if (cd $(PROJ)/tests/irq-nounwind-panic && OSDK_LOCAL_DEV=1 MIRIFLAGS="-Zkmiri-toml=$(PROJ)/tests/irq-nounwind-panic/kmiri.toml -Zmiri-permissive-provenance -Zmiri-tree-borrows" timeout -k 10s 180s cargo osdk miri test) >"$$log" 2>&1; then \
+	cat "$$log"; rm -f "$$log"; echo "irq-nounwind-panic unexpectedly succeeded"; exit 1; \
+fi; \
+cat "$$log"; \
+if grep -qF "panic in a function that cannot unwind" "$$log" && grep -qF "A non-unwinding panic occurred" "$$log"; then \
+	echo "Observed expected non-unwinding panic termination."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "irq-nounwind-panic failed without the expected non-unwinding panic message"; exit 1; \
+fi
+endef
+
 define RUN_KERNEL_TASK_ENTRY_PRIVATE_TEST
 log=$$(mktemp); \
 if (cd $(PROJ)/tests/kernel-task-entry-private && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1; then \
@@ -240,7 +256,8 @@ ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
                    kernel-task-entry-private \
                    arch-fs-gs-base \
                    cpu-local-overaligned \
-                   task-double-run
+                   task-double-run \
+                   irq-nounwind-panic
 .PHONY: asterinas-test-all
 asterinas-test-all: install install-osdk
 	set -eu; \
@@ -276,6 +293,8 @@ asterinas-test-all: install install-osdk
 			$(RUN_IOMEM_PODONCE_SIZE_TEST); \
 		elif [ "$${test}" = kernel-task-entry-private ]; then \
 			$(RUN_KERNEL_TASK_ENTRY_PRIVATE_TEST); \
+		elif [ "$${test}" = irq-nounwind-panic ]; then \
+			$(RUN_IRQ_NOUNWIND_PANIC_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
