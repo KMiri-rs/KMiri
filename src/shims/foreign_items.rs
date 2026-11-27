@@ -1544,6 +1544,19 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
             }
 
             // Rust for Linux symbols
+            "_copy_from_iter" => {
+                let [to, capacity, _iter] =
+                    this.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
+                let to = this.read_pointer(to)?;
+                let capacity = this.read_target_usize(capacity)?;
+                let n = if capacity == 0 { 0 } else { 1 };
+                if n > 0 {
+                    this.ptr_get_alloc_id(to, 0)?;
+                    this.write_bytes_ptr(to, std::iter::once(0x41u8))?;
+                }
+                this.write_scalar(Scalar::from_target_usize(n, this), dest)?;
+            }
+
             "rust_helper_krealloc_node_align" | "krealloc_node_align" => {
                 let [old_ptr, new_size, align, flags, _nid] =
                     ecx.check_shim_sig_lenient(abi, CanonAbi::C, link_name, args)?;
