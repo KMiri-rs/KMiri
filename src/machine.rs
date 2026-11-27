@@ -529,6 +529,10 @@ pub(crate) struct PendingIrq {
     pub(crate) clock: Option<crate::concurrency::VClock>,
 }
 
+/// The interrupt a context is handling. It belongs to the context, not to the
+/// CPU: a kernel may switch to another context inside the handler, and the
+/// interrupted context finishes the handler when it is switched back to,
+/// possibly on another CPU.
 pub(crate) struct ActiveIrq {
     pub(crate) event_id: u64,
     pub(crate) vector: u8,
@@ -540,12 +544,11 @@ pub(crate) struct ActiveIrq {
 pub(crate) struct CpuIrqState {
     pub(crate) enabled: bool,
     pub(crate) pending: VecDeque<PendingIrq>,
-    pub(crate) active: Option<ActiveIrq>,
 }
 
 impl CpuIrqState {
     fn new(enabled: bool) -> Self {
-        Self { enabled, pending: VecDeque::new(), active: None }
+        Self { enabled, pending: VecDeque::new() }
     }
 }
 
@@ -716,6 +719,9 @@ pub struct MiriMachine<'tcx> {
     /// KMiri's optional IRQ model, configured only through `-Zkmiri-toml`.
     pub(crate) irq_config: IrqConfigToml,
     pub(crate) irq_cpus: Vec<CpuIrqState>,
+    /// The interrupt each context is inside the handler of. A CPU is handling
+    /// an interrupt while the context it runs is in this map.
+    pub(crate) irq_active: FxHashMap<ThreadId, ActiveIrq>,
     pub(crate) irq_rng: StdRng,
     /// Configuration of the simulated CPUs.
     pub(crate) smp_config: SmpConfigToml,
@@ -847,8 +853,19 @@ impl<'tcx> MiriMachine<'tcx> {
         (event_id, false)
     }
 
+    /// Whether CPU `cpu` is inside an interrupt handler: whether the context it
+    /// runs is.
+    pub(crate) fn cpu_in_irq(&self, cpu: usize) -> bool {
+        let context = if cpu == self.threads.active_cpu {
+            Some(self.threads.active_thread())
+        } else {
+            self.threads.cpu_thread(cpu)
+        };
+        context.is_some_and(|thread| self.irq_active.contains_key(&thread))
+    }
+
     pub(crate) fn maybe_queue_timer_irq(&mut self, cpu: usize) -> Option<u64> {
-        if !self.irq_config.enabled() || self.irq_cpus[cpu].active.is_some() {
+        if !self.irq_config.enabled() || self.cpu_in_irq(cpu) {
             return None;
         }
 
@@ -867,18 +884,32 @@ impl<'tcx> MiriMachine<'tcx> {
         Some(self.queue_irq(cpu, vector, IrqSource::Timer))
     }
 
+    /// Ends the interrupt that `thread`, which has just taken a step on CPU
+    /// `cpu`, is handling if its handler has returned (the stack is back at the
+    /// interrupted depth), and returns it.
+    ///
+    /// What the return does to the CPU's interrupt flag depends on the
+    /// architecture. x86 `iret` restores the flags saved on entry. Elsewhere
+    /// (RISC-V `mret`, Arm `eret`) the flag comes from a per-CPU register that
+    /// the kernel's trap return code sets, and that code is the program's own,
+    /// so the flag is left as the program set it.
     pub(crate) fn finish_irq_if_returned(
         &mut self,
+        thread: ThreadId,
         cpu: usize,
-        current_stack_depth: usize,
-    ) -> Option<(u64, u8, IrqSource, bool)> {
-        let active = self.irq_cpus[cpu].active.as_ref()?;
-        if current_stack_depth > active.stack_depth {
+    ) -> Option<ActiveIrq> {
+        let active = self.irq_active.get(&thread)?;
+        let thread_ref = self.threads.thread_ref(thread);
+        // A context that ended inside the handler never returns from it, but
+        // its CPU leaves the handler all the same.
+        if !thread_ref.is_terminated() && thread_ref.stack_len() > active.stack_depth {
             return None;
         }
-        let active = self.irq_cpus[cpu].active.take().unwrap();
-        self.irq_cpus[cpu].enabled = active.was_enabled;
-        Some((active.event_id, active.vector, active.source, active.was_enabled))
+        let active = self.irq_active.remove(&thread).unwrap();
+        if matches!(self.tcx.sess.target.arch, Arch::X86 | Arch::X86_64) {
+            self.irq_cpus[cpu].enabled = active.was_enabled;
+        }
+        Some(active)
     }
 
     /// Create a new MiriMachine.
@@ -1051,6 +1082,7 @@ impl<'tcx> MiriMachine<'tcx> {
             irq_cpus: (0..smp_config.num_cpus())
                 .map(|_| CpuIrqState::new(irq_enabled_at_start))
                 .collect(),
+            irq_active: FxHashMap::default(),
             irq_rng,
             smp_config,
             smp_rng,

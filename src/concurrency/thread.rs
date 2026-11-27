@@ -252,6 +252,11 @@ impl<'tcx> Thread<'tcx> {
         self.state.is_enabled()
     }
 
+    /// The number of frames on this thread's stack.
+    pub fn stack_len(&self) -> usize {
+        self.stack.len()
+    }
+
     pub fn is_terminated(&self) -> bool {
         self.state.is_terminated()
     }
@@ -975,6 +980,12 @@ impl<'tcx> ThreadManager<'tcx> {
     /// Switches to the thread with thread ID `thread_id`.
     pub fn switch_to(&mut self, thread_id: ThreadId) {
         self.next_thread[self.active_cpu] = Some(thread_id);
+    }
+
+    /// Whether the program asked the active CPU to switch to another context
+    /// (`miri_switch_to`).
+    pub fn switch_requested(&self) -> bool {
+        self.next_thread[self.active_cpu].is_some()
     }
 
     pub fn schedule_switch_thread_and_cpu(

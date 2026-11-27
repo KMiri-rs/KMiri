@@ -187,6 +187,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kmiri-alloc-static-dep"
+version = "0.1.0"
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -218,6 +222,7 @@ dependencies = [
  "getrandom 0.1.16",
  "getrandom 0.2.17",
  "getrandom 0.3.4",
+ "kmiri-alloc-static-dep",
  "libc",
  "num_cpus",
  "page_size",
