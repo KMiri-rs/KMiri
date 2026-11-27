@@ -354,6 +354,11 @@ impl KMiriConfigToml {
         self.kalloc.iter().find(|kalloc| kalloc.base_addr == base_addr)
     }
 
+    /// The `[[kalloc]]` region that contains `addr`, if any.
+    pub fn kalloc_containing(&self, addr: usize) -> Option<&KAlloc> {
+        self.kalloc.iter().find(|kalloc| addr.wrapping_sub(kalloc.base_addr) < kalloc.size)
+    }
+
     pub fn prefers_user_implementation(&self, symbol_name: &str) -> bool {
         self.user_preferred_symbol.get(symbol_name).copied().unwrap_or(false)
     }
