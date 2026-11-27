@@ -1,0 +1,17 @@
+page_table = false
+total_mem_size = 0x8000000
+
+[[link_section]]
+name = ".kmiri_array"
+start = "__kmiri_array_start"
+end = "__kmiri_array_end"
+
+[[link_section]]
+name = ".kmiri_calls"
+start = "__kmiri_calls_start"
+end = "__kmiri_calls_end"
+
+[[link_section]]
+name = ".kmiri_none"
+start = "__kmiri_none_start"
+end = "__kmiri_none_end"

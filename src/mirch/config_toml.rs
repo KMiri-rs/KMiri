@@ -25,6 +25,10 @@ pub struct KMiriConfigToml {
     /// The value is a physical address.
     #[serde(default)]
     layout: BTreeMap<String, u64>,
+    /// Link sections that a linker script collects into one array between a
+    /// start and an end symbol (`MiriMachine::init_link_section_arrays`).
+    #[serde(default)]
+    link_section: Vec<LinkSectionToml>,
     #[serde(default)]
     kalloc: Vec<KAlloc>,
     /// Symbols defined in user code that should take precedence over built-in shims.
@@ -321,6 +325,10 @@ impl KMiriConfigToml {
         self.layout.iter().map(|(name, addr)| (name.as_str(), *addr))
     }
 
+    pub fn link_sections(&self) -> &[LinkSectionToml] {
+        &self.link_section
+    }
+
     pub fn get_kalloc(&self, base_addr: usize) -> Option<&KAlloc> {
         self.kalloc.iter().find(|kalloc| kalloc.base_addr == base_addr)
     }
@@ -354,6 +362,15 @@ pub fn config_stack_mem_size() -> u64 {
 
 pub const fn config_cpu_local_size() -> u64 {
     0x1_0000 // 64 KB
+}
+
+/// A link section laid out as one array: `start` names its first element and
+/// `end` the address just past its last one.
+#[derive(Clone, Debug, Deserialize)]
+pub struct LinkSectionToml {
+    pub name: String,
+    pub start: String,
+    pub end: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
