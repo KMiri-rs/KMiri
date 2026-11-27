@@ -1026,6 +1026,31 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     );
                 }
             }
+            // Enable interrupts on the current CPU and halt it until an interrupt is pending,
+            // like x86 `sti; hlt`.
+            "kern_miri_halt" => {
+                let [] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let cpu = ecx.machine.threads.active_cpu;
+                if !ecx.machine.irq_config.enabled() {
+                    ecx.machine.irq_cpus[cpu].enabled = true;
+                    if !ecx.machine.halt_disabled_noted {
+                        ecx.machine.halt_disabled_noted = true;
+                        eprintln!(
+                            "KMiri: halt returns immediately because IRQ simulation is disabled"
+                        );
+                    }
+                } else {
+                    if ecx.machine.irq_cpus[cpu].active.is_some() {
+                        throw_machine_stop!(TerminationInfo::Abort(
+                            "halt inside an interrupt handler is not supported".to_owned()
+                        ));
+                    }
+                    ecx.machine.irq_cpus[cpu].enabled = true;
+                    if ecx.machine.irq_cpus[cpu].pending.is_empty() {
+                        ecx.machine.threads.set_cpu_halted(cpu, true);
+                    }
+                }
+            }
             "kern_miri_irq_enable" => {
                 let [] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
                 if !ecx.machine.irq_config.enabled() {

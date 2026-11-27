@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering;
 use std::task::Poll;
 use std::time::Duration;
 
+use rand::RngExt;
 use rand::seq::IteratorRandom;
 use rustc_abi::ExternAbi;
 use rustc_const_eval::CTRL_C_RECEIVED;
@@ -135,6 +136,83 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
             return res;
         }
 
+        if ecx.machine.threads.is_cpu_halted(ecx.machine.threads.active_cpu) {
+            if !ecx.machine.threads.other_runnable_cpus().is_empty() {
+                ecx.yield_to_other_cpu();
+                ecx.machine.threads.apply_cpu_switch();
+                return interp_ok(SchedulingAction::ExecuteStep);
+            }
+            let timer_can_fire = ecx.machine.irq_entry.is_some()
+                && ecx.machine.timer_vector.is_some()
+                && (ecx.machine.irq_config.tick_interval_basic_blocks() != 0
+                    || ecx.machine.irq_config.random_injection_rate() > 0.0
+                    || ecx
+                        .machine
+                        .irq_config
+                        .inject_at_basic_blocks()
+                        .iter()
+                        .any(|&b| b > ecx.machine.basic_block_count));
+            if timer_can_fire {
+                let halted: Vec<usize> = (0..ecx.machine.threads.num_cpus())
+                    .filter(|&c| ecx.machine.threads.is_cpu_halted(c))
+                    .collect();
+                let idx = ecx.machine.irq_rng.random_range(0..halted.len());
+                let cpu = halted[idx];
+                let vector = ecx.machine.timer_vector.unwrap();
+                let event_id = ecx.machine.queue_irq(cpu, vector, crate::machine::IrqSource::Timer);
+                ecx.machine.threads.set_active_cpu(cpu);
+                if ecx.machine.irq_config.trace() {
+                    eprintln!(
+                        "KMiri IRQ: event={event_id} cpu={cpu} action=timer-queued vector={vector} source=Timer block={} IF={} pending={} reason=all-halted",
+                        ecx.machine.basic_block_count,
+                        ecx.machine.irq_cpus[cpu].enabled,
+                        ecx.machine.irq_cpus[cpu].pending.len(),
+                    );
+                }
+                return interp_ok(SchedulingAction::ExecuteStep);
+            }
+            // Another CPU's context may be blocked (on a timeout or host I/O). Let Miri's
+            // unblocking machinery run, but never step the halted CPU.
+            DelayedCallbacks::process(ecx)?;
+            if ecx.machine.communicate() {
+                ecx.poll_and_unblock(Some(Duration::ZERO))?;
+            }
+            let sleep_time = ecx.unblock_expired_deadlines()?;
+            if let Some(&cpu) = ecx.machine.threads.other_runnable_cpus().first() {
+                ecx.machine.threads.set_active_cpu(cpu);
+                return interp_ok(SchedulingAction::ExecuteStep);
+            }
+            if let Some(sleep_time) = sleep_time {
+                return interp_ok(SchedulingAction::SleepAndWaitForIo(Some(sleep_time)));
+            }
+            if ecx.any_thread_blocked_on_host() {
+                return interp_ok(SchedulingAction::SleepAndWaitForIo(None));
+            }
+            let any_blocked = (0..ecx.machine.threads.num_cpus()).any(|c| {
+                !ecx.machine.threads.is_cpu_halted(c)
+                    && ecx.machine.threads.cpu_thread(c).is_some()
+                    && !ecx.machine.threads.is_cpu_thread_enabled(c)
+            });
+            if any_blocked {
+                throw_machine_stop!(TerminationInfo::GlobalDeadlock);
+            }
+            {
+                let halted = (0..ecx.machine.threads.num_cpus())
+                    .filter(|&c| ecx.machine.threads.is_cpu_halted(c))
+                    .map(|c| {
+                        let name = ecx
+                            .machine
+                            .threads
+                            .cpu_thread(c)
+                            .map(|t| ecx.machine.threads.get_thread_display_name(t))
+                            .unwrap_or_else(|| "<none>".to_owned());
+                        (c, name)
+                    })
+                    .collect();
+                throw_machine_stop!(TerminationInfo::AllCpusHalted { halted });
+            }
+        }
+
         // kmiri: kernel contexts are resumed only by the kernel's own switches, never
         // picked by the scheduler below. A yield of a CPU context (a spin-loop hint or
         // a preemption point) lets another CPU run instead.
@@ -194,7 +272,9 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
             .all_threads()
             .skip(thread_manager.active_thread().index() + 1)
             .chain(thread_manager.all_threads().take(thread_manager.active_thread().index() + 1))
-            .filter(|(_id, thread)| thread.is_enabled());
+            .filter(|(id, thread)| {
+                thread.is_enabled() && !thread_manager.is_halted_cpu_context(*id)
+            });
         // Pick a new thread, and switch to it.
         let new_thread = if thread_manager.fixed_scheduling() {
             let next = threads_iter.next();

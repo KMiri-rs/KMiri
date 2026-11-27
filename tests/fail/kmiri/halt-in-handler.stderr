@@ -1,0 +1,24 @@
+KMiri IRQ: cpu=0 action=entry-registered block_count=547
+KMiri IRQ: cpu=0 thread=ThreadId(0) action=enable block_count=550 pending=0
+KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=queued vector=40 source=Test block_count=553 pending=1 IF=true
+KMiri IRQ: event=0 cpu=0 thread=ThreadId(0) action=delivered vector=40 source=Test global_block_count=553 return_block=1 pending=0 IF=0
+error: abnormal termination: halt inside an interrupt handler is not supported
+  --> tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+   |
+LL |     unsafe { kern_miri_halt() }
+   |              ^^^^^^^^^^^^^^^^ abnormal termination occurred here
+   |
+   = note: stack backtrace:
+           0: irq::halt
+               at tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+           1: handler
+               at tests/fail/kmiri/halt-in-handler.rs:LL:CC
+           2: irq::raise
+               at tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+           3: main
+               at tests/fail/kmiri/halt-in-handler.rs:LL:CC
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+

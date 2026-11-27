@@ -793,6 +793,7 @@ pub struct MiriMachine<'tcx> {
     /// Whether `exit` has been called (or, equivalently, `main` has returned).
     /// It is UB to call `exit` again.
     pub exit_called: bool,
+    pub halt_disabled_noted: bool,
 }
 
 impl<'tcx> MiriMachine<'tcx> {
@@ -800,6 +801,7 @@ impl<'tcx> MiriMachine<'tcx> {
         let event_id = self.next_irq_event_id;
         self.next_irq_event_id = self.next_irq_event_id.wrapping_add(1);
         self.irq_cpus[cpu].pending.push_back(PendingIrq { vector, event_id, source, clock: None });
+        self.threads.set_cpu_halted(cpu, false);
         event_id
     }
 
@@ -820,6 +822,7 @@ impl<'tcx> MiriMachine<'tcx> {
                     None => existing.clock = Some(new_clock),
                 }
             }
+            self.threads.set_cpu_halted(cpu, false);
             return (existing.event_id, true);
         }
         let event_id = self.next_irq_event_id;
@@ -830,6 +833,7 @@ impl<'tcx> MiriMachine<'tcx> {
             source: IrqSource::Ipi,
             clock,
         });
+        self.threads.set_cpu_halted(cpu, false);
         (event_id, false)
     }
 
@@ -1086,6 +1090,7 @@ impl<'tcx> MiriMachine<'tcx> {
             debugger: None,
             debugger_output: RefCell::new(Vec::new()),
             exit_called: false,
+            halt_disabled_noted: false,
         }
     }
 
@@ -2330,6 +2335,21 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
                     ecx.machine.irq_cpus[ecx.machine.threads.active_cpu].enabled,
                     ecx.machine.irq_cpus[ecx.machine.threads.active_cpu].pending.len(),
                 );
+            }
+        }
+        for cpu in 0..ecx.machine.threads.num_cpus() {
+            if ecx.machine.threads.is_cpu_halted(cpu) {
+                if let Some(event_id) = ecx.machine.maybe_queue_timer_irq(cpu) {
+                    if ecx.machine.irq_config.trace() {
+                        eprintln!(
+                            "KMiri IRQ: event={event_id} cpu={cpu} action=timer-queued vector={} source=Timer block={} IF={} pending={}",
+                            ecx.machine.timer_vector.unwrap(),
+                            ecx.machine.basic_block_count,
+                            ecx.machine.irq_cpus[cpu].enabled,
+                            ecx.machine.irq_cpus[cpu].pending.len(),
+                        );
+                    }
+                }
             }
         }
 

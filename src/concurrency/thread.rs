@@ -518,6 +518,7 @@ pub struct ThreadManager<'tcx> {
     next_cpu: Option<usize>,
     /// An array stores the mapping between CPU number and the `ThreadId`.
     cpu_to_threads: Vec<Option<ThreadId>>,
+    cpu_halted: Vec<bool>,
     /// The context each CPU started in (its boot context), once started.
     cpu_boot_threads: Vec<Option<ThreadId>>,
     /// An array stores the base virtual address of cpu local variables for each CPU.
@@ -630,6 +631,7 @@ impl<'tcx> ThreadManager<'tcx> {
         Self {
             active_thread: ThreadId::MAIN_THREAD,
             cpu_to_threads,
+            cpu_halted: vec![false; num_cpus],
             cpu_boot_threads,
             cpu_local_base,
             active_cpu: 0,
@@ -707,11 +709,41 @@ impl<'tcx> ThreadManager<'tcx> {
         self.cpu_boot_threads[cpu] = Some(thread);
     }
 
+    pub fn cpu_thread(&self, cpu: usize) -> Option<ThreadId> {
+        self.cpu_to_threads[cpu]
+    }
+
+    pub fn is_cpu_thread_enabled(&self, cpu: usize) -> bool {
+        self.cpu_to_threads[cpu].is_some_and(|t| self.threads[t].state.is_enabled())
+    }
+
+    pub fn is_cpu_halted(&self, cpu: usize) -> bool {
+        self.cpu_halted[cpu]
+    }
+
+    /// Whether `id` is the current context of a halted CPU (such a context must not run).
+    pub fn is_halted_cpu_context(&self, id: ThreadId) -> bool {
+        self.cpu_to_threads
+            .iter()
+            .zip(&self.cpu_halted)
+            .any(|(&thread, &halted)| halted && thread == Some(id))
+    }
+
+    pub fn set_cpu_halted(&mut self, cpu: usize, halted: bool) {
+        self.cpu_halted[cpu] = halted;
+    }
+
+    pub fn set_active_cpu(&mut self, cpu: usize) {
+        self.active_cpu = cpu;
+        self.active_thread = self.cpu_to_threads[cpu].unwrap();
+    }
+
     /// The started CPUs, other than the active one, whose current context can take a step.
     pub fn other_runnable_cpus(&self) -> Vec<usize> {
         (0..self.num_cpus())
             .filter(|&cpu| {
                 cpu != self.active_cpu
+                    && !self.cpu_halted[cpu]
                     && self.cpu_to_threads[cpu].is_some_and(|t| self.threads[t].state.is_enabled())
             })
             .collect()
@@ -948,9 +980,13 @@ impl<'tcx> ThreadManager<'tcx> {
                 // The context a started CPU was running returned with no successor:
                 // that CPU stops, and execution continues on another running CPU.
                 self.cpu_to_threads[self.active_cpu] = None;
+                self.cpu_halted[self.active_cpu] = false;
                 let cpu = self.other_runnable_cpus().first().copied().unwrap_or(0);
                 self.active_cpu = cpu;
                 self.active_thread = self.cpu_to_threads[cpu].unwrap_or(ThreadId::MAIN_THREAD);
+                if self.cpu_halted[cpu] {
+                    return None;
+                }
                 return Some(interp_ok(SchedulingAction::ExecuteStep));
             }
             // CPU 0 goes back to the bootstrap context.

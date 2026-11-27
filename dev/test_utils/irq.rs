@@ -10,6 +10,7 @@ unsafe extern "Rust" {
     fn kern_miri_set_timer_vector(vector: u8);
     fn kern_miri_test_raise_irq(vector: u8);
     fn kern_miri_send_ipi(cpu: usize, vector: u8);
+    fn kern_miri_halt();
 }
 
 pub struct IrqGuard {
@@ -54,4 +55,8 @@ pub fn enable() {
 
 pub fn disable() {
     unsafe { kern_miri_irq_disable() };
+}
+
+pub fn halt() {
+    unsafe { kern_miri_halt() }
 }

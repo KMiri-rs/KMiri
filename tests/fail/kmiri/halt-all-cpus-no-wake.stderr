@@ -1,0 +1,20 @@
+error: all started CPUs are halted and no interrupt can wake them: cpu 0 (`main`), cpu 1 (`unnamed-ID`)
+  --> tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+   |
+LL | }
+   |  ^ the last CPU halted here
+   |
+   = note: this is on thread `unnamed-ID`
+   = note: stack backtrace:
+           0: irq::halt
+               at tests/fail/kmiri/../../../dev/test_utils/irq.rs:LL:CC
+           1: cpu1_entry
+               at tests/fail/kmiri/halt-all-cpus-no-wake.rs:LL:CC
+note: the last function in that backtrace got called indirectly due to this code
+  --> tests/fail/kmiri/../../../dev/test_utils/smp.rs:LL:CC
+   |
+LL |     unsafe { kern_miri_start_cpu(cpu, func, arg, stack_end, $HEX) }
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
