@@ -1,0 +1,23 @@
+error: Undefined Behavior: the memory $HEX..$HEX holds the stack of a thread running on a CPU, and is freed or reused
+  --> tests/fail/kmiri/object-free-running-stack.rs:LL:CC
+   |
+LL |     unsafe { kern_miri_object_died(std::ptr::with_exposed_provenance_mut(stack)) };
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Undefined Behavior occurred here
+   |
+   = help: this indicates a bug in the program: it performed an invalid operation, and caused Undefined Behavior
+   = help: see https://doc.rust-lang.org/nightly/reference/behavior-considered-undefined.html for further information
+   = note: this is on thread `unnamed-ID`
+note: the current function got called indirectly due to this code
+  --> tests/fail/kmiri/object-free-running-stack.rs:LL:CC
+   |
+LL |           let thread = miri_create_new_thread(
+   |  ______________________^
+LL | |             entry,
+LL | |             stack.expose_provenance(),
+LL | |             stack.addr() + $HEX,
+LL | |             $HEX,
+LL | |         );
+   | |_________^
+
+error: aborting due to 1 previous error
+

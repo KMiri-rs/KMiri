@@ -141,6 +141,7 @@ pub type PlaceTy<'tcx> = interpret::PlaceTy<'tcx, machine::Provenance>;
 pub type MPlaceTy<'tcx> = interpret::MPlaceTy<'tcx, machine::Provenance>;
 
 pub use crate::alloc::MiriAllocBytes;
+pub use crate::alloc_addresses::kernel_object::EvalContextExt as _;
 pub use crate::alloc_addresses::{EvalContextExt as _, ProvenanceMode};
 pub use crate::borrow_tracker::stacked_borrows::{
     EvalContextExt as _, Item, Permission, Stack, Stacks,

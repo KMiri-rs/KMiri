@@ -1338,16 +1338,20 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let func_arg = ecx.read_immediate(args)?;
                 let stack_end = ecx.read_target_usize(stack_end)?;
                 let stack_size = ecx.read_target_usize(stack_size)?;
+                let Some(stack_start) = stack_end.checked_sub(stack_size) else {
+                    throw_ub_format!(
+                        "`miri_create_new_thread`: a stack of {stack_size:#x} bytes cannot end at {stack_end:#x}"
+                    );
+                };
+                // A thread whose stack is in this memory has ended.
+                ecx.end_threads_on_stack(stack_start..stack_end)?;
                 let id = ecx.start_regular_thread(
                     None,
                     start_routine,
                     ExternAbi::Rust,
                     func_arg,
                     ecx.machine.layouts.unit,
-                    Some(Stack::Range {
-                        start: (stack_end - stack_size) as usize,
-                        end: stack_end as usize,
-                    }),
+                    Some(Stack::Range { start: stack_start as usize, end: stack_end as usize }),
                 )?;
                 ecx.machine.kernel_threads.insert(id);
                 ecx.write_scalar(Scalar::from_target_usize(id.to_u32().into(), ecx), dest)?;
@@ -1359,6 +1363,13 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let [thread] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
                 let thread = ecx.read_target_usize(thread)?;
                 let thread_id = u32::try_from(thread).ok().map(ThreadId::new_unchecked);
+                if let Some(id) = thread_id
+                    && ecx.machine.stackless_threads.contains(&id)
+                {
+                    throw_ub_format!(
+                        "switching to a thread whose stack was freed or reused (see `kern_miri_object_died`)"
+                    );
+                }
                 let Some(thread_id) = thread_id.filter(|id| {
                     ecx.machine.kernel_threads.contains(id)
                         && !ecx.machine.threads.thread_ref(*id).is_terminated()
@@ -1421,6 +1432,37 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let ptr = ecx.read_pointer(ptr)?;
                 let size = ecx.read_target_usize(size)? as usize;
                 ecx.dealloc_heap_slot(ptr, size)?;
+            }
+            "kern_miri_object_born" => {
+                let [ptr, size, align] =
+                    ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let ptr = ecx.read_pointer(ptr)?;
+                let size = ecx.read_target_usize(size)?;
+                let align = ecx.read_target_usize(align)?;
+                let ptr = ecx.kernel_object_born(ptr, size, align)?;
+                ecx.write_pointer(ptr, dest)?;
+            }
+            "kern_miri_object_died" => {
+                let [ptr] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let ptr = ecx.read_pointer(ptr)?;
+                let ptr = ecx.kernel_object_died(ptr)?;
+                ecx.write_pointer(ptr, dest)?;
+            }
+            "kern_miri_object_realloc_begin" => {
+                let [ptr] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let ptr = ecx.read_pointer(ptr)?;
+                let ptr = ecx.kernel_object_realloc_begin(ptr)?;
+                ecx.write_pointer(ptr, dest)?;
+            }
+            "kern_miri_object_realloc_end" => {
+                let [old, new, size, align] =
+                    ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let old = ecx.read_pointer(old)?;
+                let new = ecx.read_pointer(new)?;
+                let size = ecx.read_target_usize(size)?;
+                let align = ecx.read_target_usize(align)?;
+                let ptr = ecx.kernel_object_realloc_end(old, new, size, align)?;
+                ecx.write_pointer(ptr, dest)?;
             }
             "kern_miri_alloc_heap_slot" => {
                 let [ptr, size] =

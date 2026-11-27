@@ -32,6 +32,10 @@ pub struct KMiriConfigToml {
     link_section: Vec<LinkSectionToml>,
     #[serde(default)]
     kalloc: Vec<KAlloc>,
+    /// Memory that an allocator of the kernel manages; the kernel announces the
+    /// objects it hands out (`alloc_addresses/kernel_object.rs`).
+    #[serde(default)]
+    pool: Vec<PoolToml>,
     /// Symbols defined in user code that should take precedence over built-in shims.
     /// This is useful when you have your own implementation of standard library functions
     /// (like `strlen`, `memcpy`, etc.) and want Miri to use them instead of reporting
@@ -311,6 +315,21 @@ impl KMiriConfigToml {
                 ));
             }
         }
+        for pool in &config.pool {
+            if config.page_table
+                || pool.size == 0
+                || pool
+                    .base_addr
+                    .checked_add(pool.size)
+                    .is_none_or(|end| end as u64 > config.total_mem_size)
+            {
+                return Err(format!(
+                    "invalid `[[pool]]` `{}` in `{}`: a pool needs `page_table = false` and a non-empty range inside `total_mem_size`",
+                    pool.name,
+                    path.display()
+                ));
+            }
+        }
         Ok(config)
     }
 
@@ -352,6 +371,11 @@ impl KMiriConfigToml {
 
     pub fn get_kalloc(&self, base_addr: usize) -> Option<&KAlloc> {
         self.kalloc.iter().find(|kalloc| kalloc.base_addr == base_addr)
+    }
+
+    /// The `[[pool]]` that contains `addr`, if any.
+    pub fn pool_containing(&self, addr: usize) -> Option<&PoolToml> {
+        self.pool.iter().find(|pool| addr.wrapping_sub(pool.base_addr) < pool.size)
     }
 
     /// The `[[kalloc]]` region that contains `addr`, if any.
@@ -401,6 +425,15 @@ pub struct LinkSectionToml {
     pub name: String,
     pub start: String,
     pub end: String,
+}
+
+/// Memory that an allocator of the kernel manages, at physical addresses
+/// `base_addr..base_addr + size`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct PoolToml {
+    pub name: String,
+    pub base_addr: usize,
+    pub size: usize,
 }
 
 #[derive(Clone, Debug, Deserialize)]
