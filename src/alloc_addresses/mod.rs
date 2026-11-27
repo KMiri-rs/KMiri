@@ -2,6 +2,7 @@
 //! and for casting between pointers and integers based on those addresses.
 
 mod address_generator;
+pub(crate) mod kernel_object;
 mod reuse_pool;
 
 use std::alloc::Layout;
@@ -100,6 +101,14 @@ pub struct GlobalStateInner {
     /// The address is the symbol value. A function holds no memory, so these stay out of
     /// `base_paddr` and `int_to_ptr_map`, where a data allocation may sit at the same address.
     layout_fn_vaddr: FxHashMap<AllocId, u64>,
+    /// kmiri: the allocation of each `[[pool]]`, by base physical address,
+    /// made on first use (`kernel_object.rs`).
+    pub pool_allocs: FxHashMap<u64, AllocId>,
+    /// kmiri: the live objects a kernel allocator handed out, by base physical
+    /// address: size and allocation (`kernel_object.rs`).
+    pub objects: std::collections::BTreeMap<u64, (u64, AllocId)>,
+    /// kmiri: objects being reallocated, left out of address lookups.
+    pub suspended_objects: FxHashMap<u64, (u64, AllocId)>,
 }
 
 impl VisitProvenance for GlobalStateInner {
@@ -117,6 +126,9 @@ impl VisitProvenance for GlobalStateInner {
             next_stack_vaddr: _,
             next_dyn_vaddr: _,
             layout_fn_vaddr: _,
+            pool_allocs: _,
+            objects: _,
+            suspended_objects: _,
         } = self;
         // Though base_addr, int_to_ptr_map, and exposed contain AllocIds, we do not want to visit them.
         // int_to_ptr_map and exposed must contain only live allocations, and those
@@ -148,6 +160,9 @@ impl GlobalStateInner {
             next_cpu_local_paddr: kernel_code_paddr_to_vaddr(mirch::cpu_local_start_addr()) as u64,
             next_dyn_vaddr: kernel_code_paddr_to_vaddr(mirch::total_mem_size()) as u64,
             layout_fn_vaddr: FxHashMap::default(),
+            pool_allocs: FxHashMap::default(),
+            objects: Default::default(),
+            suspended_objects: FxHashMap::default(),
         }
     }
 
@@ -179,15 +194,30 @@ impl GlobalStateInner {
     /// Add the info of exposed paddr and AllocId to the interpreter, like int_to_ptr_map.
     fn set_exposed_kernel_padd(&mut self, alloc_id: AllocId, paddr: usize) {
         let paddr = paddr as u64;
-        let pos = if self.int_to_ptr_map.last().is_some_and(|(last_addr, _)| *last_addr < paddr) {
-            self.int_to_ptr_map.len()
-        } else {
-            self.int_to_ptr_map.binary_search_by_key(&paddr, |(addr, _)| *addr).unwrap_err()
-        };
+        // An allocation may start where another one starts that it lies in
+        // (e.g. a kernel object at the start of a thread's stack). It goes
+        // after that one, as the inner allocation.
+        let pos = self.int_to_ptr_map.partition_point(|(addr, _)| *addr <= paddr);
 
         self.exposed.insert(alloc_id);
         self.int_to_ptr_map.insert(pos, (paddr, alloc_id));
         self.base_paddr.insert(alloc_id, paddr);
+    }
+
+    /// The position of `alloc_id`, which starts at `paddr`, in `int_to_ptr_map`.
+    fn int_to_ptr_pos(&self, paddr: u64, alloc_id: AllocId) -> Option<usize> {
+        let start = self.int_to_ptr_map.partition_point(|(addr, _)| *addr < paddr);
+        self.int_to_ptr_map[start..]
+            .iter()
+            .take_while(|(addr, _)| *addr == paddr)
+            .position(|(_, id)| *id == alloc_id)
+            .map(|offset| start + offset)
+    }
+
+    /// Leaves `alloc_id`, which starts at `paddr`, out of address lookups.
+    fn unmap_addr(&mut self, paddr: u64, alloc_id: AllocId) {
+        let pos = self.int_to_ptr_pos(paddr, alloc_id).unwrap();
+        self.int_to_ptr_map.remove(pos);
     }
 
     pub fn get_base_addr(&self, alloc_id: AllocId) -> u64 {
@@ -875,7 +905,12 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         // We always search the allocation to the right of this address. So if the size is strictly
         // negative, we have to search for `addr-1` instead.
         let addr = if size >= 0 { paddr } else { paddr.saturating_sub(1) };
-        let pos = global_state.int_to_ptr_map.binary_search_by_key(&addr, |(addr, _)| *addr);
+        // Allocations may share a base address, the inner one last (see
+        // `set_exposed_kernel_padd`): at that address, take the last one.
+        let pos = match global_state.int_to_ptr_map.partition_point(|&(base, _)| base <= addr) {
+            pos if pos > 0 && global_state.int_to_ptr_map[pos - 1].0 == addr => Ok(pos - 1),
+            pos => Err(pos),
+        };
 
         // Determine the in-bounds provenance for this pointer.
         let alloc_id = match pos {
@@ -889,7 +924,10 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 drop(global_state);
                 match self.cpu_local_copy_at(paddr) {
                     Some(copy) => copy,
-                    None => self.lazy_alloc_typed_slot_allocation(paddr),
+                    None =>
+                        self.eval_context_ref()
+                            .kernel_object_or_pool_at(paddr as u64)
+                            .or_else(|| self.lazy_alloc_typed_slot_allocation(paddr)),
                 }
             }
             Err(pos) => {
@@ -916,6 +954,10 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     drop(global_state);
                     if let Some(copy) = self.cpu_local_copy_at(paddr) {
                         copy
+                    } else if let Some(alloc_id) =
+                        self.eval_context_ref().kernel_object_or_pool_at(paddr as u64)
+                    {
+                        Some(alloc_id)
                     } else if page_table_enabled {
                         self.lazy_alloc_typed_slot_allocation(paddr)
                     } else {
@@ -1314,7 +1356,11 @@ pub(crate) fn expose_allocation<'tcx>(
     }
 }
 
-fn expose_tag<'tcx>(paddr: usize, alloc_id: AllocId, ecx: &InterpCx<'tcx, MiriMachine<'tcx>>) {
+pub(super) fn expose_tag<'tcx>(
+    paddr: usize,
+    alloc_id: AllocId,
+    ecx: &InterpCx<'tcx, MiriMachine<'tcx>>,
+) {
     let Some(borrow_tracker) = ecx.machine.borrow_tracker.as_ref() else {
         // Without a borrow tracker (`-Zmiri-disable-stacked-borrows`) there is no
         // tag to expose; marking the allocation exposed is all int2ptr needs.
@@ -1348,12 +1394,10 @@ impl<'tcx> MiriMachine<'tcx> {
         // To avoid a linear scan we first look up the address in `base_addr`, and then find it in
         // `int_to_ptr_map`.
         let paddr = *global_state.base_paddr.get(&dead_id).unwrap();
-        let Ok(pos) = global_state.int_to_ptr_map.binary_search_by_key(&paddr, |(addr, _)| *addr)
-        else {
-            panic!("paddr={paddr:#x} is not in int_to_ptr_map");
+        let Some(pos) = global_state.int_to_ptr_pos(paddr, dead_id) else {
+            panic!("paddr={paddr:#x} {dead_id:?} is not in int_to_ptr_map");
         };
-        let removed = global_state.int_to_ptr_map.remove(pos);
-        assert_eq!(removed, (paddr, dead_id)); // double-check that we removed the right thing
+        global_state.int_to_ptr_map.remove(pos);
         // We can also remove it from `exposed`, since this allocation can anyway not be returned by
         // `alloc_id_from_addr` any more.
         global_state.exposed.remove(&dead_id);

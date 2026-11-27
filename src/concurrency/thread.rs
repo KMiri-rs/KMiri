@@ -188,6 +188,9 @@ pub struct Thread<'tcx> {
     /// The stack bottom of the current thread.
     pub(crate) stack_bottom: u64,
 
+    /// The end of the stack range of the current thread.
+    pub(crate) stack_top: u64,
+
     /// The live stack allocations of this thread, keyed by virtual address.
     /// When one of them dies, `next_stack_vaddr` moves back up to the lowest
     /// one that is left (see `reclaim_stack_addr`).
@@ -395,6 +398,7 @@ impl<'tcx> Thread<'tcx> {
             stack_addr_records: Vec::new(),
             next_stack_vaddr: RefCell::new(stack_range.end),
             stack_bottom: stack_range.start,
+            stack_top: stack_range.end,
             live_stack_allocs: RefCell::new(BTreeMap::new()),
             live_stack_vaddrs: RefCell::new(FxHashMap::default()),
             popping_frame: false,
@@ -417,6 +421,7 @@ impl VisitProvenance for Thread<'_> {
             stack_addr_records: _,
             next_stack_vaddr: _,
             stack_bottom: _,
+            stack_top: _,
             live_stack_allocs: _,
             live_stack_vaddrs: _,
             popping_frame: _,
@@ -829,6 +834,40 @@ impl<'tcx> ThreadManager<'tcx> {
             .iter()
             .filter(move |t| !t.state.is_terminated() && t.stack_bottom <= addr)
             .map(|t| t.stack_bottom)
+    }
+
+    /// The threads that have not terminated and whose stack range overlaps `range`.
+    pub fn threads_with_stack_in(&self, range: Range<u64>) -> Vec<ThreadId> {
+        self.threads
+            .iter_enumerated()
+            .filter(|(_, t)| {
+                !t.state.is_terminated() && t.stack_bottom < range.end && range.start < t.stack_top
+            })
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// Whether thread `id` is running on a CPU.
+    pub fn is_running_on_cpu(&self, id: ThreadId) -> bool {
+        id == self.active_thread || self.cpu_to_threads.contains(&Some(id))
+    }
+
+    /// Ends thread `id`, which is not running, because the memory holding its
+    /// stack is freed or reused: its frames are dropped without running again.
+    /// Returns its frames, innermost last, for the caller to end their calls,
+    /// and its live stack allocations (address and allocation) for the caller
+    /// to free.
+    pub fn end_thread_without_stack(
+        &mut self,
+        id: ThreadId,
+    ) -> (Vec<Frame<'tcx, Provenance, FrameExtra<'tcx>>>, Vec<(u64, AllocId)>) {
+        let thread = &mut self.threads[id];
+        thread.state = ThreadState::Terminated;
+        let frames = mem::take(&mut thread.stack);
+        thread.stack_addr_records.clear();
+        thread.on_stack_empty = None;
+        thread.live_stack_vaddrs.get_mut().clear();
+        (frames, mem::take(thread.live_stack_allocs.get_mut()).into_iter().collect())
     }
 
     /// Get the id of the currently active thread.
@@ -1392,6 +1431,11 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         return_dest: &MPlaceTy<'tcx>,
     ) -> InterpResult<'tcx> {
         let ecx = self.eval_context_mut();
+        if ecx.machine.stackless_threads.contains(&joined_thread_id) {
+            throw_unsup_format!(
+                "KMiri: joining a thread that ended without finishing because the memory holding its stack was freed"
+            );
+        }
         let thread_mgr = &mut ecx.machine.threads;
         if thread_mgr.threads[joined_thread_id].join_status == ThreadJoinStatus::Detached {
             // On Windows this corresponds to joining on a closed handle.

@@ -1,0 +1,9 @@
+# A kernel allocator's pool at 0x2000000..0x2100000; see
+# `src/alloc_addresses/kernel_object.rs`.
+page_table = false
+total_mem_size = 0x8000000
+
+[[pool]]
+name = "Heap"
+base_addr = 0x2000000
+size = 0x100000

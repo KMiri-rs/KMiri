@@ -22,6 +22,7 @@ pub fn kind_str(kind: MemoryKind) -> &'static str {
         MemoryKind::Machine(kind) =>
             match kind {
                 MiriMemoryKind::Kernel => "Kernel",
+                MiriMemoryKind::Pool => "Pool",
                 MiriMemoryKind::Rust => "Rust",
                 MiriMemoryKind::Miri => "Miri",
                 MiriMemoryKind::C => "C",

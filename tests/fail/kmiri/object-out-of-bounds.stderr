@@ -1,0 +1,18 @@
+error: Undefined Behavior: memory access failed: attempting to access 1 byte, but got ALLOC+0x10 which is at or beyond the end of the allocation of size 16 bytes
+  --> tests/fail/kmiri/object-out-of-bounds.rs:LL:CC
+   |
+LL |         object.add(16).write(1);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^ Undefined Behavior occurred here
+   |
+   = help: this indicates a bug in the program: it performed an invalid operation, and caused Undefined Behavior
+   = help: see https://doc.rust-lang.org/nightly/reference/behavior-considered-undefined.html for further information
+help: ALLOC was allocated here:
+  --> tests/fail/kmiri/object-out-of-bounds.rs:LL:CC
+   |
+LL |         let object = kern_miri_object_born(block($HEX), 16, 8);
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+

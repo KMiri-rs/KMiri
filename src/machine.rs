@@ -186,6 +186,9 @@ impl VisitProvenance for FrameExtra<'_> {
 pub enum MiriMemoryKind {
     /// kernel-managed memory, which is located in pseudo physical memory.
     Kernel,
+    /// A `[[pool]]`: memory that an allocator of the kernel manages. It lives as
+    /// long as the machine.
+    Pool,
     /// `__rust_alloc` memory.
     Rust,
     /// `miri_alloc` memory.
@@ -230,7 +233,7 @@ impl MayLeak for MiriMemoryKind {
         use self::MiriMemoryKind::*;
         match self {
             Rust | Miri | C | WinHeap | WinLocal | Runtime | Kernel => false,
-            Machine | Global | ExternStatic | Tls | Mmap | SocketAddress => true,
+            Machine | Global | ExternStatic | Tls | Mmap | SocketAddress | Pool => true,
         }
     }
 }
@@ -243,7 +246,7 @@ impl MiriMemoryKind {
             // Heap allocations are fine since the `Allocation` is created immediately.
             Rust | Miri | C | WinHeap | WinLocal | Mmap | Kernel => true,
             // Everything else is unclear, let's not show potentially confusing spans.
-            Machine | Global | ExternStatic | Tls | Runtime | SocketAddress => false,
+            Machine | Global | ExternStatic | Tls | Runtime | SocketAddress | Pool => false,
         }
     }
 }
@@ -253,6 +256,7 @@ impl fmt::Display for MiriMemoryKind {
         use self::MiriMemoryKind::*;
         match self {
             Kernel => write!(f, "Kernel"),
+            Pool => write!(f, "kernel allocator pool"),
             Rust => write!(f, "Rust heap"),
             Miri => write!(f, "Miri bare-metal heap"),
             C => write!(f, "C heap"),
@@ -623,6 +627,9 @@ pub struct MiriMachine<'tcx> {
     /// `kern_miri_init_ap`). A task finds its thread through the id stored in
     /// its saved context, not through this set.
     pub(crate) kernel_threads: FxHashSet<ThreadId>,
+    /// Kernel threads that ended because the memory holding their stack was
+    /// freed (`alloc_addresses/kernel_object.rs`).
+    pub(crate) stackless_threads: FxHashSet<ThreadId>,
 
     /// Stores which thread is eligible to run on which CPUs.
     /// This has no effect at all, it is just tracked to produce the correct result
@@ -1098,6 +1105,7 @@ impl<'tcx> MiriMachine<'tcx> {
             cpu_local_copies: RefCell::new(Vec::new()),
             typed_page_made_at: RefCell::new(FxHashMap::default()),
             kernel_threads: FxHashSet::default(),
+            stackless_threads: FxHashSet::default(),
             pt_checker: None,
             record: Vec::new(),
             debugger: None,
