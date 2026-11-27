@@ -140,6 +140,21 @@ else \
 fi
 endef
 
+# Reclaiming a dropped frame via `Frame::from_unused` must give it KMiri
+# backing memory without UB. The test powers off deliberately right after
+# printing the value so post-`kernel_main` allocations do not reuse the frame
+# still in the global allocator's free pool (asterinas#4295).
+define RUN_FRAME_FROM_UNUSED_TEST
+log=$$(mktemp); \
+(cd $(PROJ)/tests/frame-from-unused && $(ASTERINAS_ENV_VARS) cargo osdk miri test) >"$$log" 2>&1 || true; \
+cat "$$log"; \
+if grep -qF "frame-from-unused: val=0xa5" "$$log" && grep -qF "power off: Success" "$$log" && ! grep -q "Undefined Behavior:" "$$log"; then \
+	echo "Observed expected frame-from-unused output and clean poweroff without UB."; rm -f "$$log"; \
+else \
+	rm -f "$$log"; echo "frame-from-unused failed"; exit 1; \
+fi
+endef
+
 # Runs the ktests of tests/ktest-runner through tool/ktest-sweep.py and checks
 # that each one gets the expected result, including the test after the one that
 # hits Undefined Behavior.
@@ -237,7 +252,7 @@ asterinas: install install-osdk
 		$(ASTERINAS_ENV_VARS) cargo osdk miri test
 endif
 
-ASTERINAS_TESTS := init frame-realloc page-table-realloc segment-zeroed \
+ASTERINAS_TESTS := init frame-realloc frame-from-unused page-table-realloc segment-zeroed \
                    task-switch-back task-exit-last task-exit-with-runnable \
                    irq-simulation irq-trap-path irq-rcu-uaf \
                    irq-rcu-uaf-lifo heap-box-drop \
@@ -295,6 +310,8 @@ asterinas-test-all: install install-osdk
 			$(RUN_KERNEL_TASK_ENTRY_PRIVATE_TEST); \
 		elif [ "$${test}" = irq-nounwind-panic ]; then \
 			$(RUN_IRQ_NOUNWIND_PANIC_TEST); \
+		elif [ "$${test}" = frame-from-unused ]; then \
+			$(RUN_FRAME_FROM_UNUSED_TEST); \
 		else \
 			(cd $(PROJ)/tests/$${test} && $(ASTERINAS_ENV_VARS) cargo osdk miri test); \
 		fi; \
