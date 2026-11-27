@@ -1,4 +1,4 @@
-//@compile-flags: -Zkmiri-toml=dev/test_utils/physical-copy.toml -Zmiri-permissive-provenance
+//@compile-flags: -Zkmiri-toml=tests/fail/kmiri/cpu-local-section-full.toml -Zmiri-permissive-provenance
 //! A CPU-local variable that does not fit in the section is reported as such, with
 //! the size to configure. Its alignment needs more than the default 64 KiB.
 
