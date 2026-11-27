@@ -823,6 +823,14 @@ impl<'tcx> ThreadManager<'tcx> {
         std::mem::replace(&mut self.active_thread, id)
     }
 
+    /// The stack bottoms of the live threads, as far as they are at or below `addr`.
+    pub fn stack_bottoms_up_to(&self, addr: u64) -> impl Iterator<Item = u64> {
+        self.threads
+            .iter()
+            .filter(move |t| !t.state.is_terminated() && t.stack_bottom <= addr)
+            .map(|t| t.stack_bottom)
+    }
+
     /// Get the id of the currently active thread.
     pub fn active_thread(&self) -> ThreadId {
         self.active_thread
