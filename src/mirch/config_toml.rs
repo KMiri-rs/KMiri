@@ -50,6 +50,40 @@ pub struct KMiriConfigToml {
     /// it, nothing is outside RAM.
     #[serde(default)]
     virtio_blk: Option<VirtioBlkConfigToml>,
+    /// Optional firmware memory map entries (`[[memory_map]]`).
+    /// Ranges omitted below `total_mem_size` are non-RAM holes.
+    /// When omitted, KMiri uses a default map with a firmware hole and a reserved
+    /// region above the kernel image when `total_mem_size` is large enough.
+    #[serde(default)]
+    memory_map: Vec<MemoryMapEntry>,
+}
+
+/// Kind of a firmware memory map entry in `kmiri.toml`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryMapKind {
+    /// Usable physical RAM.
+    Usable,
+    /// Firmware-reserved non-RAM region.
+    Reserved,
+}
+
+impl MemoryMapKind {
+    /// ABI code returned by `kern_miri_memory_map_entry`.
+    pub const fn as_u32(self) -> u32 {
+        match self {
+            Self::Usable => 1,
+            Self::Reserved => 2,
+        }
+    }
+}
+
+/// One entry in the machine's firmware memory map (`[[memory_map]]` in `kmiri.toml`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct MemoryMapEntry {
+    pub base: u64,
+    pub len: u64,
+    pub kind: MemoryMapKind,
 }
 
 /// Configuration for the simulated CPUs.
@@ -192,7 +226,71 @@ impl KMiriConfigToml {
                 path.display()
             ));
         }
+        if !config.memory_map.is_empty() {
+            let page = page_size() as u64;
+            let mut sorted = config.memory_map.clone();
+            sorted.sort_by_key(|e| (e.base, e.len));
+            let mut prev_end = 0u64;
+            for entry in &sorted {
+                if entry.len == 0
+                    || !entry.base.is_multiple_of(page)
+                    || !entry.len.is_multiple_of(page)
+                {
+                    return Err(format!(
+                        "invalid `[[memory_map]]` in `{}`: base ({:#x}) and len ({:#x}) must be non-zero multiples of {page:#x}",
+                        path.display(),
+                        entry.base,
+                        entry.len
+                    ));
+                }
+                let Some(end) = entry.base.checked_add(entry.len) else {
+                    return Err(format!(
+                        "invalid `[[memory_map]]` in `{}`: entry at {:#x} overflows",
+                        path.display(),
+                        entry.base
+                    ));
+                };
+                if end > config.total_mem_size {
+                    return Err(format!(
+                        "invalid `[[memory_map]]` in `{}`: entry [{:#x}, {:#x}) exceeds `total_mem_size` ({:#x})",
+                        path.display(),
+                        entry.base,
+                        end,
+                        config.total_mem_size
+                    ));
+                }
+                if entry.base < prev_end {
+                    return Err(format!(
+                        "invalid `[[memory_map]]` in `{}`: overlapping entries at {:#x}",
+                        path.display(),
+                        entry.base
+                    ));
+                }
+                prev_end = end;
+            }
+            let kernel_end =
+                PhysConfig::kernel_code_size_for(config.cpu_local_size() as usize) as u64;
+            let mut covered = 0u64;
+            for entry in &sorted {
+                if entry.kind != MemoryMapKind::Usable {
+                    continue;
+                }
+                if entry.base <= covered && entry.base + entry.len > covered {
+                    covered = entry.base + entry.len;
+                }
+            }
+            if covered < kernel_end {
+                return Err(format!(
+                    "invalid `[[memory_map]]` in `{}`: usable RAM must cover the kernel image [0x0, {kernel_end:#x})",
+                    path.display()
+                ));
+            }
+        }
         Ok(config)
+    }
+
+    pub fn memory_map(&self) -> &[MemoryMapEntry] {
+        &self.memory_map
     }
 
     pub fn total_mem_size(&self) -> u64 {

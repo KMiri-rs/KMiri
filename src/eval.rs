@@ -595,7 +595,8 @@ pub fn eval_entry<'tcx>(
             phys_config.kernel_code_size = PhysConfig::kernel_code_size_for(needed);
         }
     }
-    mirch::init_pseudo_physical_mem(phys_config, page_table_enabled);
+    let memory_map = mirch::resolve_memory_map(config.kmiri_toml.as_ref(), &phys_config);
+    mirch::init_pseudo_physical_mem(phys_config, page_table_enabled, memory_map);
 
     // Copy setting before we move `config`.
     let ignore_leaks = config.ignore_leaks;

@@ -93,7 +93,9 @@ fn pieces<'tcx>(
     paddr: u64,
     len: usize,
 ) -> InterpResult<'tcx, Vec<(u64, usize)>> {
-    let Some(end) = paddr.checked_add(len as u64).filter(|&end| end <= total_mem_size() as u64)
+    let Some(end) = paddr
+        .checked_add(len as u64)
+        .filter(|&end| end <= total_mem_size() as u64 && super::is_ram_range(paddr as usize, len))
     else {
         throw_unsup_format!(
             "a device accessed {len} bytes at physical address {paddr:#x}, outside RAM"

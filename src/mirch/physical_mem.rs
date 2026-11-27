@@ -17,8 +17,56 @@ static mut PHYSICAL_MEM: PhysicalMemory = PhysicalMemory::empty();
 /// Inits a page-based pseudo physical memory for the KernMiri.
 ///
 /// The memory size and page size are defined in [`self::config`].
-pub fn init_pseudo_physical_mem(config: PhysConfig, page_table_enabled: bool) {
-    *physical_mem_mut() = PhysicalMemory::new(config, page_table_enabled);
+pub fn init_pseudo_physical_mem(
+    config: PhysConfig,
+    page_table_enabled: bool,
+    memory_map: Vec<super::MemoryMapEntry>,
+) {
+    *physical_mem_mut() = PhysicalMemory::new(config, page_table_enabled, memory_map);
+}
+
+/// Returns the machine's firmware memory map entries.
+pub fn memory_map() -> &'static [super::MemoryMapEntry] {
+    &physical_mem().memory_map
+}
+
+/// Returns whether physical address `paddr` lies in a usable RAM region.
+pub fn is_ram_paddr(paddr: usize) -> bool {
+    let p = paddr as u64;
+    physical_mem()
+        .memory_map
+        .iter()
+        .any(|e| e.kind == super::MemoryMapKind::Usable && p >= e.base && p < e.base + e.len)
+}
+
+/// Returns whether the entire byte range `[paddr, paddr + len)` lies in usable RAM.
+pub fn is_ram_range(paddr: usize, len: usize) -> bool {
+    if len == 0 {
+        return is_ram_paddr(paddr);
+    }
+    let Some(end) = (paddr as u64).checked_add(len as u64) else {
+        return false;
+    };
+    let mut cur = paddr as u64;
+    for e in &physical_mem().memory_map {
+        if e.kind != super::MemoryMapKind::Usable {
+            continue;
+        }
+        let e_end = e.base + e.len;
+        if e.base <= cur && e_end > cur {
+            cur = e_end;
+            if cur >= end {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Returns whether the page at `paddr` is a non-RAM hole/reserved page inside `[0, total_mem_size)`.
+pub fn is_non_ram_page(paddr: usize) -> bool {
+    let index = paddr / page_size();
+    physical_mem().page_states.get(index) == Some(&PageState::NonRam)
 }
 
 /// Returns an immutable reference to `PhysicalMemory` instance.
@@ -186,6 +234,10 @@ pub fn dealloc_pages<'tcx>(
         let page_paddr = paddr + page_size() * page_index;
         let page_idx = page_paddr / page_size();
         let page_info = physical_mem.page_states[page_idx];
+
+        if page_info == PageState::NonRam {
+            continue;
+        }
 
         if let PageState::Typed { page_type, slot_size } = page_info {
             // Free the allocation of every typed object on the page (see
@@ -629,6 +681,8 @@ pub fn insert_init_mask(this: &MiriInterpCx<'_>, paddr: usize, params: MiriAlloc
 
 pub struct PhysicalMemory {
     pub mem: *mut u8,
+    /// The machine's firmware memory map entries.
+    pub memory_map: Vec<super::MemoryMapEntry>,
     pub page_states: Vec<PageState>,
     pub init_masks: BTreeMap<usize, Allocation<Provenance, (), MiriAllocBytes>>,
     /// Allocations that stand for free slab slots rather than for heap
@@ -648,6 +702,7 @@ impl PhysicalMemory {
     pub const fn empty() -> Self {
         Self {
             mem: std::ptr::null_mut(),
+            memory_map: Vec::new(),
             page_states: Vec::new(),
             init_masks: BTreeMap::new(),
             free_slab_slots: BTreeSet::new(),
@@ -661,15 +716,35 @@ impl PhysicalMemory {
         Layout::from_size_align(total_mem_size(), page_size()).unwrap()
     }
 
-    pub fn new(config: PhysConfig, page_table_enabled: bool) -> Self {
+    pub fn new(
+        config: PhysConfig,
+        page_table_enabled: bool,
+        memory_map: Vec<super::MemoryMapEntry>,
+    ) -> Self {
         super::config::init(config);
         let mem = unsafe { std::alloc::alloc_zeroed(Self::mem_buffer_layout()) };
 
-        let page_states =
-            if page_table_enabled { vec![PageState::Unused; total_page_num()] } else { vec![] };
+        let page_states = if page_table_enabled {
+            let mut states = vec![PageState::NonRam; total_page_num()];
+            let page = page_size() as u64;
+            for entry in &memory_map {
+                if entry.kind == super::MemoryMapKind::Usable {
+                    let start = (entry.base / page) as usize;
+                    let end = ((entry.base + entry.len) / page) as usize;
+                    let end = end.min(states.len());
+                    for s in &mut states[start..end] {
+                        *s = PageState::Unused;
+                    }
+                }
+            }
+            states
+        } else {
+            vec![]
+        };
 
         Self {
             mem,
+            memory_map,
             page_states,
             init_masks: BTreeMap::new(),
             free_slab_slots: BTreeSet::new(),
@@ -712,6 +787,8 @@ impl PhysicalMemory {
 /// `Untyped`/`Typed` --deallocate--> `Unused`.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PageState {
+    /// Physical address not backed by RAM (firmware hole or reserved non-RAM region).
+    NonRam,
     Unused,
     Untyped,
     /// Page type means what the page is used for.
@@ -917,5 +994,5 @@ pub fn kernel_atomic_u32<'tcx>(
 /// maps to through the current page table, if it maps to one.
 pub fn outside_ram_paddr(vaddr: usize) -> Option<usize> {
     let page_table = physical_mem().page_table.as_ref()?;
-    page_table.page_walk(vaddr).filter(|&paddr| paddr >= total_mem_size())
+    page_table.page_walk(vaddr).filter(|&paddr| !is_ram_paddr(paddr))
 }
