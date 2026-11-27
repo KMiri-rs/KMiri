@@ -1023,12 +1023,18 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 }
             }
             // Enable interrupts on the current CPU and halt it until an interrupt is pending,
-            // like x86 `sti; hlt`.
-            "kern_miri_halt" => {
+            // like x86 `sti; hlt`. `kern_miri_wait_for_interrupt` halts the same way but
+            // leaves the interrupt flag alone, like RISC-V `wfi`: an interrupt that becomes
+            // pending wakes the CPU even while interrupts are off, and is then taken only
+            // once they are on.
+            "kern_miri_halt" | "kern_miri_wait_for_interrupt" => {
                 let [] = ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
                 let cpu = ecx.machine.threads.active_cpu;
+                let enable = link_name.as_str() == "kern_miri_halt";
                 if !ecx.machine.irq_config.enabled() {
-                    ecx.machine.irq_cpus[cpu].enabled = true;
+                    if enable {
+                        ecx.machine.irq_cpus[cpu].enabled = true;
+                    }
                     if !ecx.machine.halt_disabled_noted {
                         ecx.machine.halt_disabled_noted = true;
                         eprintln!(
@@ -1041,7 +1047,9 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                             "halt inside an interrupt handler is not supported".to_owned()
                         ));
                     }
-                    ecx.machine.irq_cpus[cpu].enabled = true;
+                    if enable {
+                        ecx.machine.irq_cpus[cpu].enabled = true;
+                    }
                     if !ecx.machine.irq_pending(cpu) {
                         ecx.machine.threads.set_cpu_halted(cpu, true);
                     }
