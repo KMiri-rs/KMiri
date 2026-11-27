@@ -1259,6 +1259,75 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 // A CPU comes out of reset with interrupts disabled.
                 ecx.machine.irq_cpus[cpu].enabled = false;
             }
+            "kern_miri_jump" => {
+                // Continues at a saved program counter the way a CPU does: calls the
+                // function at `pc`, taking its parameters from the first `nregs`
+                // argument registers in `regs`, as many as the function declares. A
+                // register holding an address becomes a pointer as an integer-to-pointer
+                // cast would make it. No return address is set, so returning from that
+                // function is undefined behavior.
+                let [pc, regs, nregs] =
+                    ecx.check_shim_sig_lenient(abi, CanonAbi::Rust, link_name, args)?;
+                let pc = ecx.read_target_usize(pc)?;
+                let regs = ecx.read_pointer(regs)?;
+                let nregs = ecx.read_target_usize(nregs)?;
+                let instance = ecx.get_ptr_fn(ecx.ptr_from_addr_cast(pc)?)?.as_instance()?;
+                let sig = ecx.tcx.instantiate_bound_regions_with_erased(
+                    instance.ty(*ecx.tcx, ty::TypingEnv::fully_monomorphized()).fn_sig(*ecx.tcx),
+                );
+                let inputs = sig.inputs();
+                if inputs.len() as u64 > nregs {
+                    throw_unsup_format!(
+                        "`kern_miri_jump`: the function at {pc:#x} takes {} parameters, but only {nregs} registers were given",
+                        inputs.len()
+                    );
+                }
+                let word = ecx.pointer_size();
+                let mut call_args = Vec::with_capacity(inputs.len());
+                for (i, &ty) in inputs.iter().enumerate() {
+                    let layout = ecx.layout_of(ty)?;
+                    let reg = ecx.ptr_to_mplace(
+                        regs.wrapping_offset(word * i as u64, ecx),
+                        ecx.machine.layouts.usize,
+                    );
+                    let value = ecx.read_target_usize(&reg)?;
+                    let scalar = match layout.backend_repr {
+                        rustc_abi::BackendRepr::Scalar(s) =>
+                            match s.primitive() {
+                                rustc_abi::Primitive::Pointer(_) =>
+                                    Scalar::from_maybe_pointer(ecx.ptr_from_addr_cast(value)?, ecx),
+                                rustc_abi::Primitive::Int(..) => {
+                                    let size = s.size(ecx);
+                                    Scalar::from_uint(size.truncate(value.into()), size)
+                                }
+                                _ =>
+                                    throw_unsup_format!(
+                                        "`kern_miri_jump`: parameter {i} of the function at {pc:#x} does not fit in a register"
+                                    ),
+                            },
+                        _ =>
+                            throw_unsup_format!(
+                                "`kern_miri_jump`: parameter {i} of the function at {pc:#x} does not fit in a register"
+                            ),
+                    };
+                    call_args.push(ImmTy::from_scalar(scalar, layout));
+                }
+                let ret_layout = ecx.layout_of(sig.output())?;
+                if !ret_layout.is_zst() {
+                    throw_unsup_format!(
+                        "`kern_miri_jump`: the function at {pc:#x} returns a value"
+                    );
+                }
+                let dest = MPlaceTy::fake_alloc_zst(ret_layout);
+                ecx.call_function(
+                    instance,
+                    sig.abi(),
+                    &call_args,
+                    Some(&dest),
+                    ReturnContinuation::Goto { ret: None, unwind: mir::UnwindAction::Unreachable },
+                )?;
+                return interp_ok(EmulateItemResult::AlreadyJumped);
+            }
             "miri_create_new_thread" => {
                 // Returns the new thread's id. OSTD stores it in the task's saved
                 // context, where native code keeps the registers to resume from,
