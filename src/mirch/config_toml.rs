@@ -134,6 +134,10 @@ impl SmpConfigToml {
 #[serde(default)]
 pub struct IrqConfigToml {
     enabled: bool,
+    /// Whether the boot CPU starts with interrupts enabled. Hardware leaves
+    /// reset with them masked, as CPUs started by `kern_miri_start_cpu`
+    /// already do; `true` keeps the earlier behaviour.
+    enabled_at_start: bool,
     tick_interval_basic_blocks: u64,
     inject_at_basic_blocks: Vec<u64>,
     random_injection_rate: f64,
@@ -145,6 +149,7 @@ impl Default for IrqConfigToml {
     fn default() -> Self {
         Self {
             enabled: false,
+            enabled_at_start: true,
             tick_interval_basic_blocks: 0,
             inject_at_basic_blocks: Vec::new(),
             random_injection_rate: 0.0,
@@ -157,6 +162,10 @@ impl Default for IrqConfigToml {
 impl IrqConfigToml {
     pub fn enabled(&self) -> bool {
         self.enabled
+    }
+
+    pub fn enabled_at_start(&self) -> bool {
+        self.enabled_at_start
     }
 
     pub fn tick_interval_basic_blocks(&self) -> u64 {

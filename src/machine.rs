@@ -540,8 +540,8 @@ pub(crate) struct CpuIrqState {
 }
 
 impl CpuIrqState {
-    fn new() -> Self {
-        Self { enabled: true, pending: VecDeque::new(), active: None }
+    fn new(enabled: bool) -> Self {
+        Self { enabled, pending: VecDeque::new(), active: None }
     }
 }
 
@@ -901,6 +901,7 @@ impl<'tcx> MiriMachine<'tcx> {
         let irq_config =
             config.kmiri_toml.as_ref().map(|toml| toml.irq().clone()).unwrap_or_default();
         let irq_rng = StdRng::seed_from_u64(irq_config.random_seed());
+        let irq_enabled_at_start = irq_config.enabled_at_start();
         let smp_config =
             config.kmiri_toml.as_ref().map(|toml| toml.smp().clone()).unwrap_or_default();
         let smp_rng = StdRng::seed_from_u64(smp_config.seed());
@@ -1040,7 +1041,9 @@ impl<'tcx> MiriMachine<'tcx> {
             report_progress: config.report_progress,
             basic_block_count: 0,
             irq_config,
-            irq_cpus: (0..smp_config.num_cpus()).map(|_| CpuIrqState::new()).collect(),
+            irq_cpus: (0..smp_config.num_cpus())
+                .map(|_| CpuIrqState::new(irq_enabled_at_start))
+                .collect(),
             irq_rng,
             smp_config,
             smp_rng,
