@@ -1,5 +1,7 @@
 //! Provides the `extern static` that this platform expects.
 
+use rustc_abi::{Align, Size};
+use rustc_middle::mir::interpret::{self, AllocInit};
 use rustc_span::Symbol;
 use rustc_target::spec::{Env, Os};
 
@@ -44,6 +46,58 @@ impl<'tcx> MiriMachine<'tcx> {
             assert!(ecx.is_dyn_sym(name), "{name} is not a dynamic symbol");
             let ptr = ecx.fn_ptr(FnVal::Other(DynSym::from_str(name)));
             Self::add_weak_symbol(ecx, name, ptr.into())?;
+        }
+        interp_ok(())
+    }
+
+    /// Plays the linker for the configured link sections: the statics placed in
+    /// a section are copied, in exported-symbol order (which need not be the
+    /// link order), into one read-only array, and its start
+    /// and end symbols point at the first element and one past the last.
+    /// Each static is its own allocation, so walking from one item to the next
+    /// needs this array; writes to the original statics are not reflected in it.
+    fn init_link_section_arrays(ecx: &mut MiriInterpCx<'tcx>) -> InterpResult<'tcx> {
+        let Some(toml) = ecx.machine.kmiri_toml.as_ref() else { return interp_ok(()) };
+        let sections = toml.link_sections().to_vec();
+        let tcx = ecx.tcx.tcx;
+        for section in sections {
+            let items = helpers::link_section_statics(tcx, &section.name)?;
+            let mut elem: Option<(Size, Align)> = None;
+            for &def_id in &items {
+                let ty = tcx.type_of(def_id).instantiate_identity().skip_norm_wip();
+                let layout = ecx.layout_of(ty)?;
+                match elem {
+                    None => elem = Some((layout.size, layout.align)),
+                    Some((size, _)) if size != layout.size =>
+                        throw_unsup_format!(
+                            "link section `{}` holds statics of different sizes",
+                            section.name
+                        ),
+                    Some((size, align)) => elem = Some((size, align.max(layout.align))),
+                }
+            }
+            // An empty section still needs an allocation for its symbols; it is
+            // pointer-sized so that a declaration of a pointer type fits.
+            let (size, align) =
+                elem.unwrap_or((ecx.pointer_size(), ecx.tcx.data_layout.pointer_align()));
+            let count = u64::try_from(items.len()).unwrap();
+            let total = if items.is_empty() { size } else { size * count };
+            let base = ecx.allocate_ptr(
+                total,
+                align,
+                MiriMemoryKind::ExternStatic.into(),
+                AllocInit::Zero,
+            )?;
+            for (i, &def_id) in items.iter().enumerate() {
+                let alloc_id = tcx.reserve_and_set_static_alloc(def_id);
+                let src = ecx.global_root_pointer(interpret::Pointer::from(alloc_id))?;
+                let dst = base.wrapping_offset(size * u64::try_from(i).unwrap(), ecx);
+                ecx.mem_copy(src.into(), dst.into(), size, true)?;
+            }
+            ecx.alloc_mark_immutable(base.provenance.get_alloc_id().unwrap())?;
+            let end = base.wrapping_offset(size * count, ecx);
+            Self::add_extern_static(ecx, &section.start, base.into());
+            Self::add_extern_static(ecx, &section.end, end.into());
         }
         interp_ok(())
     }
@@ -97,6 +151,8 @@ impl<'tcx> MiriMachine<'tcx> {
             }
             _ => {} // No "extern statics" supported on this target.
         }
+
+        Self::init_link_section_arrays(ecx)?;
 
         // Also initialize `missing_weak_symbol`.
         let place = ecx.allocate(ecx.machine.layouts.usize, MiriMemoryKind::ExternStatic.into())?;

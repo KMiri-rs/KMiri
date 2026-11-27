@@ -947,20 +947,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                     throw_unsup_format!("`kern_miri_link_section_item`: section name is not UTF-8");
                 };
                 let tcx = ecx.tcx.tcx;
-                let mut items = vec![];
-                helpers::iter_exported_symbols(tcx, |_cnum, def_id, _used| {
-                    if !tcx.is_foreign_item(def_id)
-                        && matches!(tcx.def_kind(def_id), DefKind::Static { .. })
-                        && !tcx.is_thread_local_static(def_id)
-                        && tcx
-                            .codegen_fn_attrs(def_id)
-                            .link_section
-                            .is_some_and(|s| s.as_str() == name)
-                    {
-                        items.push(def_id);
-                    }
-                    interp_ok(())
-                })?;
+                let items = helpers::link_section_statics(tcx, &name)?;
                 match usize::try_from(index).ok().and_then(|i| items.get(i)) {
                     Some(&def_id) => {
                         let alloc_id = tcx.reserve_and_set_static_alloc(def_id);

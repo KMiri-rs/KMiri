@@ -165,6 +165,23 @@ pub fn iter_exported_symbols<'tcx>(
     interp_ok(())
 }
 
+/// The statics placed in the link section `name`, in exported-symbol order.
+/// Thread-local and foreign statics are skipped.
+pub fn link_section_statics<'tcx>(tcx: TyCtxt<'tcx>, name: &str) -> InterpResult<'tcx, Vec<DefId>> {
+    let mut items = vec![];
+    iter_exported_symbols(tcx, |_cnum, def_id, _used| {
+        if !tcx.is_foreign_item(def_id)
+            && matches!(tcx.def_kind(def_id), DefKind::Static { .. })
+            && !tcx.is_thread_local_static(def_id)
+            && tcx.codegen_fn_attrs(def_id).link_section.is_some_and(|s| s.as_str() == name)
+        {
+            items.push(def_id);
+        }
+        interp_ok(())
+    })?;
+    interp_ok(items)
+}
+
 impl<'tcx> EvalContextExt<'tcx> for crate::MiriInterpCx<'tcx> {}
 pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
     /// Checks if the given crate/module exists.

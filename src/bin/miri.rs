@@ -191,6 +191,10 @@ fn report_unknown_local_foreign_symbol_uses(tcx: TyCtxt<'_>, kmiri_toml: Option<
         for (symbol, _addr) in config.layout_symbols() {
             exported.insert(rustc_span::Symbol::intern(symbol));
         }
+        for section in config.link_sections() {
+            exported.insert(rustc_span::Symbol::intern(&section.start));
+            exported.insert(rustc_span::Symbol::intern(&section.end));
+        }
     }
     for body_owner in tcx.hir_body_owners() {
         let body = tcx.hir_body_owned_by(body_owner);
