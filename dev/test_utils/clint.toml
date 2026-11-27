@@ -1,0 +1,20 @@
+page_table = false
+total_mem_size = 0x8000000
+
+[irq]
+enabled = true
+
+[smp]
+num_cpus = 2
+switch_rate = 0.0
+seed = 0
+
+# The memory under the register window, as a kernel's device mapping.
+[[kalloc]]
+name = "clint"
+base_addr = 0x2000000
+size = 0x10000
+align = 0x10000
+
+[clint]
+base_addr = 0x2000000

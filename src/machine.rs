@@ -519,6 +519,8 @@ pub(crate) enum IrqSource {
     Timer,
     Test,
     Ipi,
+    /// A level of the CLINT (`mirch/clint.rs`).
+    Clint,
 }
 
 /// A pending simulated interrupt, delivered to the entry on the current Miri thread.
@@ -805,6 +807,8 @@ pub struct MiriMachine<'tcx> {
 
     /// The 16550 UARTs of the KMiri config.
     pub uart16550: RefCell<Vec<mirch::Uart16550>>,
+    /// The CLINT of the KMiri config.
+    pub(crate) clint: Option<mirch::Clint>,
 
     /// Whether `exit` has been called (or, equivalently, `main` has returned).
     /// It is UB to call `exit` again.
@@ -862,6 +866,27 @@ impl<'tcx> MiriMachine<'tcx> {
             self.threads.cpu_thread(cpu)
         };
         context.is_some_and(|thread| self.irq_active.contains_key(&thread))
+    }
+
+    /// Whether an interrupt for CPU `cpu` is pending, queued or a level.
+    pub(crate) fn irq_pending(&self, cpu: usize) -> bool {
+        !self.irq_cpus[cpu].pending.is_empty()
+            || self
+                .clint
+                .as_ref()
+                .is_some_and(|clint| clint.pending_vector(cpu, self.basic_block_count).is_some())
+    }
+
+    /// Takes the next interrupt to deliver to CPU `cpu`: a queued one first,
+    /// then a pending level.
+    pub(crate) fn take_irq(&mut self, cpu: usize) -> Option<PendingIrq> {
+        if let Some(pending) = self.irq_cpus[cpu].pending.pop_front() {
+            return Some(pending);
+        }
+        let vector = self.clint.as_ref()?.pending_vector(cpu, self.basic_block_count)?;
+        let event_id = self.next_irq_event_id;
+        self.next_irq_event_id = self.next_irq_event_id.wrapping_add(1);
+        Some(PendingIrq { vector, event_id, source: IrqSource::Clint, clock: None })
     }
 
     pub(crate) fn maybe_queue_timer_irq(&mut self, cpu: usize) -> Option<u64> {
@@ -1061,6 +1086,11 @@ impl<'tcx> MiriMachine<'tcx> {
                     .map(|toml| toml.uart16550().iter().map(mirch::Uart16550::new).collect())
                     .unwrap_or_default(),
             ),
+            clint: config
+                .kmiri_toml
+                .as_ref()
+                .and_then(|toml| toml.clint())
+                .map(|clint| mirch::Clint::new(clint, smp_config.num_cpus())),
             reachable_function_instances: Default::default(),
             backtrace_style: config.backtrace_style,
             user_relevant_crates,
@@ -2435,6 +2465,11 @@ impl<'tcx> Machine<'tcx> for MiriMachine<'tcx> {
         }
         for cpu in 0..ecx.machine.threads.num_cpus() {
             if ecx.machine.threads.is_cpu_halted(cpu) {
+                // A level that became pending (the CLINT timer passing the CPU's
+                // compare value) wakes the CPU.
+                if ecx.machine.irq_pending(cpu) {
+                    ecx.machine.threads.set_cpu_halted(cpu, false);
+                }
                 if let Some(event_id) = ecx.machine.maybe_queue_timer_irq(cpu) {
                     if ecx.machine.irq_config.trace() {
                         eprintln!(

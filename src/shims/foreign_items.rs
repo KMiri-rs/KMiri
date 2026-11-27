@@ -1042,7 +1042,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                         ));
                     }
                     ecx.machine.irq_cpus[cpu].enabled = true;
-                    if ecx.machine.irq_cpus[cpu].pending.is_empty() {
+                    if !ecx.machine.irq_pending(cpu) {
                         ecx.machine.threads.set_cpu_halted(cpu, true);
                     }
                 }

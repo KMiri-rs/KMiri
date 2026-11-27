@@ -48,9 +48,10 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
 
         // kmiri: a volatile access through an address that lands on untyped
         // pages, which hold raw bytes rather than an interpreter allocation.
-        // Or one in the register window of a modelled UART.
+        // Or one in the register window of a modelled UART or CLINT.
         if ecx.machine.kmiri_toml.is_some()
             && (crate::mirch::volatile_on_uart16550(ecx, instance, args, dest)?
+                || crate::mirch::volatile_on_clint(ecx, instance, args, dest)?
                 || crate::mirch::volatile_on_untyped(ecx, instance, args, dest)?)
         {
             ecx.return_to_block(ret)?;
