@@ -148,6 +148,30 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
                 ecx.machine.threads.apply_cpu_switch();
                 return interp_ok(SchedulingAction::ExecuteStep);
             }
+            // With a CLINT, time moves on to the next timer interrupt of a
+            // halted CPU; nothing else would happen before it.
+            let halted: Vec<usize> = (0..ecx.machine.threads.num_cpus())
+                .filter(|&c| ecx.machine.threads.is_cpu_halted(c))
+                .collect();
+            let block_count = ecx.machine.basic_block_count;
+            if let Some(clint) = &mut ecx.machine.clint
+                && clint.skip_to_next_timer(&halted, block_count)
+            {
+                let woken: Vec<usize> =
+                    halted.iter().copied().filter(|&c| ecx.machine.irq_pending(c)).collect();
+                for &cpu in &woken {
+                    ecx.machine.threads.set_cpu_halted(cpu, false);
+                }
+                ecx.machine.threads.set_active_cpu(woken[0]);
+                if ecx.machine.irq_config.trace() {
+                    eprintln!(
+                        "KMiri IRQ: cpu={} action=time-skipped mtime={} reason=all-halted",
+                        woken[0],
+                        ecx.machine.clint.as_ref().unwrap().mtime(block_count),
+                    );
+                }
+                return interp_ok(SchedulingAction::ExecuteStep);
+            }
             let timer_can_fire = ecx.machine.irq_entry.is_some()
                 && ecx.machine.timer_vector.is_some()
                 && (ecx.machine.irq_config.tick_interval_basic_blocks() != 0
@@ -159,9 +183,6 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
                         .iter()
                         .any(|&b| b > ecx.machine.basic_block_count));
             if timer_can_fire {
-                let halted: Vec<usize> = (0..ecx.machine.threads.num_cpus())
-                    .filter(|&c| ecx.machine.threads.is_cpu_halted(c))
-                    .collect();
                 let idx = ecx.machine.irq_rng.random_range(0..halted.len());
                 let cpu = halted[idx];
                 let vector = ecx.machine.timer_vector.unwrap();
@@ -362,11 +383,11 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             && ecx.machine.irq_config.enabled()
             && !ecx.machine.cpu_in_irq(cpu)
             && ecx.machine.irq_cpus[cpu].enabled
-            && !ecx.machine.irq_cpus[cpu].pending.is_empty()
+            && ecx.machine.irq_pending(cpu)
             && let Some(frame) = top_frame
             && let Some(loc) = frame.current_loc().left()
         {
-            let pending = ecx.machine.irq_cpus[cpu].pending.pop_front().unwrap();
+            let pending = ecx.machine.take_irq(cpu).unwrap();
             if let Some(clock) = pending.clock {
                 ecx.acquire_clock(&clock)?;
             }

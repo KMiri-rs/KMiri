@@ -4,6 +4,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use super::clint::{CLINT_WINDOW, ClintConfigToml};
 use super::config::{PhysConfig, page_size};
 use super::uart16550::Uart16550ConfigToml;
 use super::virtio_blk::{VIRTIO_MMIO_WINDOW, VirtioBlkConfigToml};
@@ -62,6 +63,10 @@ pub struct KMiriConfigToml {
     /// 16550-compatible UARTs reached by volatile accesses (`uart16550.rs`).
     #[serde(default)]
     uart16550: Vec<Uart16550ConfigToml>,
+    /// A core-local interruptor: per-CPU timer and software interrupts
+    /// (`clint.rs`).
+    #[serde(default)]
+    clint: Option<ClintConfigToml>,
     /// Optional firmware memory map entries (`[[memory_map]]`).
     /// Ranges omitted below `total_mem_size` are non-RAM holes.
     /// When omitted, KMiri uses a default map with a firmware hole and a reserved
@@ -255,6 +260,19 @@ impl KMiriConfigToml {
                 path.display()
             ));
         }
+        if let Some(clint) = &config.clint
+            && (!config.irq.enabled()
+                || clint.basic_blocks_per_tick == 0
+                || clint.base_addr.checked_add(CLINT_WINDOW).is_none()
+                || config.irq.tick_interval_basic_blocks != 0
+                || !config.irq.inject_at_basic_blocks.is_empty()
+                || config.irq.random_injection_rate != 0.0)
+        {
+            return Err(format!(
+                "invalid `[clint]` in `{}`: the CLINT needs `[irq] enabled = true`, `basic_blocks_per_tick` must be at least 1, the register window must fit in the address space, and the CLINT's timer replaces the injected one (`[irq]` `tick_interval_basic_blocks`, `inject_at_basic_blocks`, `random_injection_rate`)",
+                path.display()
+            ));
+        }
         if !config.memory_map.is_empty() {
             let page = page_size() as u64;
             let mut sorted = config.memory_map.clone();
@@ -401,6 +419,10 @@ impl KMiriConfigToml {
 
     pub fn uart16550(&self) -> &[Uart16550ConfigToml] {
         &self.uart16550
+    }
+
+    pub fn clint(&self) -> Option<&ClintConfigToml> {
+        self.clint.as_ref()
     }
 }
 
