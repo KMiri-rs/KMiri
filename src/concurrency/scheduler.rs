@@ -90,11 +90,17 @@ trait EvalContextPrivExt<'tcx>: MiriInterpCxExt<'tcx> {
         let ecx = self.eval_context_mut();
 
         // A simulated IRQ runs synchronously on the interrupted thread and CPU, so
-        // no other context of this CPU runs until its handler returns. Other CPUs
-        // keep running meanwhile: a yield in the handler (such as a spin-loop hint)
-        // lets another CPU run, and random CPU switches apply.
+        // no other context of this CPU runs until its handler returns, unless the
+        // handler itself switches to one (a kernel that preempts on interrupt
+        // return). Other CPUs keep running meanwhile: a yield in the handler (such
+        // as a spin-loop hint) lets another CPU run, and random CPU switches apply.
         let cpu = ecx.machine.threads.active_cpu;
-        if ecx.machine.irq_cpus[cpu].active.is_some() {
+        if ecx.machine.cpu_in_irq(cpu) {
+            if ecx.machine.threads.switch_requested()
+                && let Some(res) = ecx.machine.threads.schedule_switch_thread_and_cpu()
+            {
+                return res;
+            }
             if std::mem::take(&mut ecx.machine.threads.yield_active_thread) {
                 ecx.yield_to_other_cpu();
             }
@@ -322,6 +328,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let ecx = self.eval_context_mut();
         let basic_blocks_before = ecx.machine.basic_block_count;
         let cpu = ecx.machine.threads.active_cpu;
+        let thread = ecx.machine.threads.active_thread();
 
         if !ecx.step()? {
             // The stack is empty. See if this thread can do something else.
@@ -334,17 +341,17 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         }
 
         let blocks_executed = ecx.machine.basic_block_count - basic_blocks_before;
-        let current_stack_depth = ecx.active_thread_stack().len();
-        if let Some((event_id, vector, source, was_enabled)) =
-            ecx.machine.finish_irq_if_returned(cpu, current_stack_depth)
+        if let Some(active) = ecx.machine.finish_irq_if_returned(thread, cpu)
+            && ecx.machine.irq_config.trace()
         {
-            if ecx.machine.irq_config.trace() {
-                eprintln!(
-                    "KMiri IRQ: event={event_id} cpu={cpu} action=returned vector={vector} source={source:?} block_count={} IF={}",
-                    ecx.machine.basic_block_count, ecx.machine.irq_cpus[cpu].enabled
-                );
-            }
-            debug_assert_eq!(ecx.machine.irq_cpus[cpu].enabled, was_enabled);
+            eprintln!(
+                "KMiri IRQ: event={} cpu={cpu} action=returned vector={} source={:?} block_count={} IF={}",
+                active.event_id,
+                active.vector,
+                active.source,
+                ecx.machine.basic_block_count,
+                ecx.machine.irq_cpus[cpu].enabled
+            );
         }
 
         // `before_terminator` queues timer events before the terminator executes.
@@ -353,7 +360,7 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
         let top_frame = ecx.active_thread_stack().last();
         if blocks_executed != 0
             && ecx.machine.irq_config.enabled()
-            && ecx.machine.irq_cpus[cpu].active.is_none()
+            && !ecx.machine.cpu_in_irq(cpu)
             && ecx.machine.irq_cpus[cpu].enabled
             && !ecx.machine.irq_cpus[cpu].pending.is_empty()
             && let Some(frame) = top_frame
@@ -369,13 +376,16 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
             let source = pending.source;
             let entry = ecx.machine.irq_entry.unwrap();
             let return_block = loc.block;
-            ecx.machine.irq_cpus[cpu].active = Some(crate::machine::ActiveIrq {
-                event_id,
-                vector,
-                source,
-                stack_depth: interrupted_depth,
-                was_enabled: true,
-            });
+            ecx.machine.irq_active.insert(
+                ecx.machine.threads.active_thread(),
+                crate::machine::ActiveIrq {
+                    event_id,
+                    vector,
+                    source,
+                    stack_depth: interrupted_depth,
+                    was_enabled: true,
+                },
+            );
             ecx.machine.irq_cpus[cpu].enabled = false;
             if ecx.machine.irq_config.trace() {
                 eprintln!(

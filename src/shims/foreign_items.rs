@@ -1036,7 +1036,7 @@ trait EvalContextExtPriv<'tcx>: crate::MiriInterpCxExt<'tcx> {
                         );
                     }
                 } else {
-                    if ecx.machine.irq_cpus[cpu].active.is_some() {
+                    if ecx.machine.cpu_in_irq(cpu) {
                         throw_machine_stop!(TerminationInfo::Abort(
                             "halt inside an interrupt handler is not supported".to_owned()
                         ));
