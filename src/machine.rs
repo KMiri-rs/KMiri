@@ -620,6 +620,9 @@ pub struct MiriMachine<'tcx> {
 
     /// This machine's monotone clock.
     pub(crate) monotonic_clock: MonotonicClock,
+    /// The command line a semihosting `SYS_GET_CMDLINE` request returns: the
+    /// program arguments joined by spaces.
+    pub(crate) semihosting_cmdline: String,
 
     /// The set of threads.
     pub(crate) threads: ThreadManager<'tcx>,
@@ -1120,6 +1123,7 @@ impl<'tcx> MiriMachine<'tcx> {
             irq_entry: None,
             timer_vector: None,
             monotonic_clock: MonotonicClock::new(config.isolated_op == IsolatedOp::Allow),
+            semihosting_cmdline: config.args.join(" "),
             #[cfg(all(feature = "native-lib", unix))]
             native_lib: config.native_lib.iter().map(|lib_file_path| {
                 let host_triple = rustc_session::config::host_tuple();

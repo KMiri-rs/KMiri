@@ -4,8 +4,8 @@
 //! operation. Under KMiri the trap is the `kern_miri_semihosting(op, param)`
 //! call, which returns what the host would put in the result register.
 //!
-//! Only the console, clock and exit operations are provided. Files other
-//! than the `:tt` console are not.
+//! Only the console, clock, command line and exit operations are provided.
+//! Files other than the `:tt` console are not.
 
 use std::io::Write;
 
@@ -21,6 +21,7 @@ const SYS_WRITE: u64 = 0x05;
 const SYS_ISTTY: u64 = 0x09;
 const SYS_CLOCK: u64 = 0x10;
 const SYS_ERRNO: u64 = 0x13;
+const SYS_GET_CMDLINE: u64 = 0x15;
 const SYS_EXIT: u64 = 0x18;
 const SYS_EXIT_EXTENDED: u64 = 0x20;
 
@@ -98,6 +99,27 @@ pub trait EvalContextExt<'tcx>: crate::MiriInterpCxExt<'tcx> {
                 let clock = &this.machine.monotonic_clock;
                 let elapsed = clock.now().duration_since(clock.epoch());
                 u64::try_from(elapsed.as_millis() / 10).unwrap_or(u64::MAX)
+            }
+            // Block: buffer, buffer size. The command line is the program
+            // arguments, the program name first, joined by spaces, as QEMU
+            // joins its `-semihosting-config arg=` options. On success the
+            // buffer holds it NUL-terminated and the size field becomes its
+            // length without the NUL; a buffer too small for it fails (-1).
+            SYS_GET_CMDLINE => {
+                let buf = field(this, 0)?.to_pointer(this);
+                let size = field(this, 1)?.to_target_usize(this)?;
+                let mut bytes = this.machine.semihosting_cmdline.clone().into_bytes();
+                let len = u64::try_from(bytes.len()).unwrap();
+                if len >= size {
+                    this.target_usize_max()
+                } else {
+                    bytes.push(0);
+                    this.write_bytes_ptr(buf, bytes)?;
+                    let size_ptr = param.wrapping_offset(word, this);
+                    let place = this.ptr_to_mplace(size_ptr, this.machine.layouts.usize);
+                    this.write_scalar(Scalar::from_target_usize(len, this), &place)?;
+                    0
+                }
             }
             // On 64-bit targets both take a block: reason, sub-code.
             SYS_EXIT | SYS_EXIT_EXTENDED => {
